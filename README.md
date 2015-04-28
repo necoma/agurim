@@ -1,7 +1,16 @@
 # agurim
 agurim: a multi-dimensional flow aggregation tool
 
+This source tree contains the tools to build the agurim web server,
+including the source code of the secondary aggregation engine and web
+user interface.
+
+The primary aggregation tools for agurim can be found at
+https://github.com/necoma/aguri2/
+
+
 LAYOUT
+
 	/usr/local/bin/agurim
 		the agurim binary
 	/cgi-bin/
