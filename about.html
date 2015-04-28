@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="">
+    <meta name="author" content="">
+
+    <title>About Agurim</title>
+
+    <!-- Bootstrap core CSS -->
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Custom styles for this template -->
+    <link href="css/carousel.css" rel="stylesheet">
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="header">
+        <ul class="nav nav-pills pull-right">
+          <li><a href="index.html">Home</a></li>
+	  <li><a href="http://www.wide.ad.jp/"><img alt="WIDE" src="img/wide-logo.png" height="24"></a></li>
+	  <li><a href="http://www.necoma-project.eu/"><img alt="necoma" src="img/necoma-logo.png" height="24"></a></li>
+          <li><a href="#how-to-use"<button type="button" class="btn btn-default btn-sm" id="help" area-label="help"><span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span></button></a></li>
+        </ul>
+        <a href="about.html"><h3 class="text-muted">Agurim</h3></a>
+      </div>
+
+      <hr>
+
+    </div> <!-- /container -->
+
+    <div class="container-fluid">
+    <div id="main">
+      <h3 id="about">About Agurim</h3>
+
+      <p>
+	Agurim is a network traffic monitor based on flexible
+	multi-dimensional flow aggregation in order to identify
+	significant aggregate flows in traffic.  A user can
+	dynamically switch views based on traffic volume or 
+	packet counts, address or protocol attributes,
+	with different temporal and spacial granularities.
+	The supported data sources are <b>pcap</b>, <b>sFlow</b>,
+	and <b>netFlow</b>.
+      </p>
+
+      <br />
+
+      <h3 id="how-to-use">How to Use</h3>
+
+      <br />
+      
+      <h4 id="main-view">main view</h4>
+      <p>
+	The main view provides dual plots, a volume-based plot on the
+	left and a packet-based plot on the right. Each plot presents
+	7 significant aggregate flows by default.
+	The legend label shows each aggregate flow with the main
+	attribute and its share against the total traffic, along with
+	the sub-attributes and their shares within the aggregate flow.
+	In the address view, the main attribute is source and
+	destination addresses and the sub-attributes are protocols.
+	In the protocol view, the main attribute is protocol and the
+	sub-attributes are addresses.
+	Addresses are presented with thier prefix length when aggregated.
+	'*' is a wildcard (e.g., 0.0.0.0/0 for IPv4 address) but '*::'
+	is used for IPv6 address.
+	Protocols are presented by proto:sport:dport (e.g.,
+	'6:80:1234' for proto=TCP, sport=80, dport=1234).
+      </p>
+
+      <p>
+	<b>basic operations:</b>
+	Use the <b>navigation buttons</b> on the bottom to <b>zoom in</b>,
+	<b>zoom out</b>, <b>forward</b> and <b>backward</b>.
+	The pulldown menus on the top right allow you to switch <b>datasets</b>
+	(when there are multiple datasets), and <b>address/protocol views</b>.
+	Click one of the plots (or use the <b>gear button</b> at the bottom)
+	to move to the <b>detail view</b>.
+	Click the <b>home button</b> to go back to the default settings.
+      </p>
+      <br />
+      
+      <h4 id="detail-view">detail view</h4>
+
+      <p>
+	The detail view allows further control.
+	Selecting an area in the plot zooms into the specified time
+	period.
+	Clicking a <b>legend label</b> further decomposes the corresponding
+	flow by applying the main attrbute as a flow filter.
+	You can change the aggregation parameters in the browser's
+	address bar, or clicking the <b>gear button</b> at the bottom
+	for the input form.
+
+	The following parameters can be specified.
+	<ul>
+	<li><b>duration</b>: integer (display duration in seconds default=86400)</li>
+	<li><b>endTime</b>: interger (unix time) or string parsable by
+	javascript's Date.parse. (default=0, use the current time)</li>
+	<li><b>startTime</b>: interger (unix time) or string parsable by
+	javascript's Date.parse. (default=0, derive from endTime and duration)</li>
+	<li><b>interval</b>: integer (time resolution in seconds, default=0, auto)</li>
+	<li><b>nflows</b>: integer (the number of flows, default=7)</li>
+	<li><b>criteria</b>: "byte" or "packet" (aggregation criteria default="packet")</li>
+	<li><b>outfmt</b>: "json", "text" or "file" (default="json",
+	  json: plotting data in json, text: reaggregation text output, 
+	  file: plotting data file)</li>
+	<li><b>dsname</b>: dataset name (default="")</li>
+	<li><b>view</b>:   view mode ("addr" or "proto", default="addr")</li>
+	<li><b>filter</b>: flow filter ("src dst" for the addr view, 
+	"proto:sport:dport" for the proto view.)</li>
+	</ul>
+	Click the <b>home button</b> to go back to the main view.
+      </p>
+
+      <br />
+      
+      <h4 id="dataset">Source code</h4>
+
+      <p>
+	The source code will be available soon.
+      </p>
+
+      <br />
+      
+      <h4 id="dataset">Sample dataset</h4>
+
+      <p>
+	This sample dataset is an effort to promote measurement data
+	sharing and provide broader access to backbone traffic for the
+	benefit of the networking community.
+	You should follow research ethics to use the data.  In
+	particular, actions that trespass upon users' privacy are
+	prohibited.
+      </p>
+      <p>
+	The data is taken from the transit link of the
+	<a href="http://www.wide.ad.jp/">WIDE</a> network (AS2500) in
+	Japan since February 2013.
+	IP addresses appearing in the dataset are anonymized using a
+	prefix-preserving method.
+	More information about the dataset is available from the
+	<a href="http://mawi.wide.ad.jp/mawi/">MAWI working group
+	traffic archive</a>.
+      </p>
+
+      <br />
+      
+      <h4 id="acknowledgments">Acknowledgments</h4>
+
+      <p>
+	This work is conducted as research activities within
+	the <a href="http://www.wide.ad.jp/">WIDE Project</a> and
+	the <a href="http://www.necoma-project.eu/">NECOMA Project</a>.
+      </p>
+      <p>
+	This research has been partly supported by the Strategic International
+	Collaborative R&amp;D Promotion Project of the Ministry
+	of Internal Affairs and Communication, Japan, and by the
+	European Union Seventh Framework Programme (FP7/2007-2013)
+	under grant agreement No. 608533 (NECOMA).
+      </p>
+
+      <br />
+      
+      <h4 id="references">References</h4>
+
+      <ol>
+      <li>Midori Kato, Kenjiro Cho, Michio Honda, Hideyuki Tokuda.<br />
+	<i>Monitoring the Dynamics of Network Traffic by Recursive
+	  Multi-dimensional Aggregation.</i><br />
+	OSDI2012 MAD Workshop.  Hollywood, CA.  October 2012.
+	(<a href="http://www.iijlab.net/~kjc/papers/agurim-mad2012.pdf">pdf</a>).
+      </li>
+      </ol>
+
+      <hr>
+
+      contact info: Kenjiro Cho, WIDE Project (kjc at wide.ad.jp)
+    </div> <!-- main -->
+    </div> <!-- container-fluid -->
+  </body>
+</html>

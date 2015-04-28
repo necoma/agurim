@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="">
+    <meta name="author" content="">
+
+    <title>Agurim</title>
+
+    <!-- Bootstrap core CSS -->
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Custom styles for this template -->
+    <link href="css/carousel.css" rel="stylesheet">
+
+    <style>
+      <!-- padding for the navbar-fixed-bottom -->
+      body {
+         padding-bottom: 70px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="header">
+        <ul class="nav nav-pills pull-right">
+          <li><a href="index.html" id="home">Home</a></li>
+          <li class="dropdown">
+	    <a href="#" class="dropdown-toggle" data-toggle="dropdown"
+	    role="button" aria-expanded="false"><span id="visibleView">view</span><span class="caret"></span></a>
+	    <ul class="dropdown-menu" role="menu" hiddenTag="#hiddenView" visibleTag="#visibleView">
+	      <li><a href="javascript:void(0)" value="proto">proto</a></li>
+	      <li><a href="javascript:void(0)" value="addr">addr</a></li>
+	    </ul>
+	    <input type="hidden" id="hiddenView" value="">
+	  </li>
+	  <li><a href="http://www.wide.ad.jp/"><img alt="WIDE" src="img/wide-logo.png" height="24"></a></li>
+	  <li><a href="http://www.necoma-project.eu/"><img alt="necoma" src="img/necoma-logo.png" height="24"></a></li>
+          <li><a href="about.html#how-to-use"<button type="button" class="btn btn-default btn-sm" id="help" area-label="help"><span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span></button></a></li>
+        </ul>
+        <a href="about.html"><h3 class="text-muted">Agurim</h3></a>
+      </div>
+
+      <hr>
+      <h3 class="datetime"></h3>
+      <div id="text"></div>
+      <div align="center">
+        <div id="chart" style="width:1000px;height:250px"></div>
+        <p id="legend" style="font-size:15pt;margin-left:0px"></p>
+        <p><p><button type="button" class="btn btn-default btn-lg" onclick="myAgurim.download()">Plot-file Download</button></p></p>
+      </div> 
+    </div> <!-- /container -->
+
+    <!-- Static bottom navbar -->
+    <div class="navbar navbar-default navbar-fixed-bottom" role="navigation">
+      <div class="text-center">
+	  <div class="btn-group" role="group" aria-label="plotting buttons">
+            <button type="button" class="btn btn-default" onclick="myAgurim.back()"><span class="glyphicon glyphicon-backward" aria-hidden="true"></span></button>
+            <button type="button" class="btn btn-default" onclick="myAgurim.zoomIn()"><span class="glyphicon glyphicon-zoom-in" aria-hidden="true"></span></button>
+            <button type="button" class="btn btn-default" onclick="myAgurim.zoomOut()"><span class="glyphicon glyphicon-zoom-out" aria-hidden="true"></span></button>
+            <button type="button" class="btn btn-default" onclick="myAgurim.forward()"><span class="glyphicon glyphicon-forward" aria-hidden="true"></span></button>
+	  </div>
+          <button type="button" class="btn btn-default" id="dialog"><span class="glyphicon glyphicon-cog" aria-hidden="true"></span></button>
+
+      </div>
+    </div>
+
+    <!-- Placed at the end of the document so the pages load faster -->
+    <!-- Javascript for this template -->
+    <!-- <script src="https://code.jquery.com/jquery-1.10.2.min.js"></script> -->
+    <script src="js/jquery-1.11.2.min.js"></script>
+    <script src="js/bootstrap.min.js"></script>
+    <script src="js/bootbox.min.js"></script>
+    <script src="js/myagurim.js"></script>
+    <script src="js/jquery.flot.js"></script>
+    <script src="js/jquery.flot.time.js"></script>
+    <script src="js/jquery.flot.selection.js"></script>
+    <script src="js/jquery.flot.highlightSeries.js"></script>
+    <script language="javascript">
+
+    <!-- jquery method to switch datasets -->
+    $(function(){
+      $('.dropdown-menu').on('click', 'a', function() {
+        var visibleTag = $(this).parents('ul').attr('visibleTag');
+        var hiddenTag = $(this).parents('ul').attr('hiddenTag');
+        $(visibleTag).html($(this).attr('value'));
+        $(hiddenTag).val($(this).attr('value'));
+
+    	if (visibleTag == '#visibleView') {
+        	myAgurim.selectView($(this).attr('value'));
+        	myAgurim.detailMain();
+	}
+      })
+    })
+
+    window.addEventListener('popstate', function(e) {
+      //console.log('state: ' + String(e.state));
+      var str = String(e.state);
+      params = str.split("&");
+      myAgurim.detailSpec(params);
+    }, false);
+
+    $(document).ready(function(){
+       params = location.search.substr(1).split("&");
+       myAgurim.detailMain(params);
+
+       var option = 
+       "<table><tr>\
+       <td><label>Criteria</label></td>\
+       <td><label><input type='radio' name='criteria' id='pps'> pps </label>\
+       <label><input type='radio' name='criteria' id='bps' checked> bps </label></td>\
+       </tr><tr>\
+       <td><label>View</label></td>\
+       <td><label><input type='radio' name='view' id='proto'> proto </label>\
+       <label><input type='radio' name='view' id='addr' checked> addr </label></td>\
+       </tr><tr>\
+       <td>Duration</td>\
+       <td><input type='text' id='duration' value=''></td>\
+       </tr><tr>\
+       <td>Start Timestamp</td><td><input type='date' id='startDate'> <input type='time' id='startDateTime'></td>\
+       </tr><tr>\
+       <td>End Timestamp</td><td><input type='date' id='endDate'> <input type='time' id='endDateTime'></td>\
+       </tr><tr>\
+       <td>interval</td>\
+       <td><input type='text' id='interval' value=''></td>\
+       </tr><tr>\
+       <td># of flows</td>\
+       <td><input type='text' id='nflows' value=''></td>\
+       </tr><tr>\
+       <td><label>Output Format</label></td>\
+       <td><label><input type='radio' name='outfmt' id='json' checked> plot </label>\
+       <label><input type='radio' name='outfmt' id='debug'> text </label></td>\
+       </tr><tr>\
+       </tr></table>";
+    
+       $(document).on("click", "#dialog", function(e) {
+         bootbox.dialog({
+           message: option,
+           title: "parameter details",
+           buttons: {
+             success: {
+               label: "Submit",
+               className: "btn-success",
+               callback: function() {
+                 var url = document.URL.replace(/(.*)\/(.*)$/g, "\$1/detail\.html");
+                 var key, val;
+                 var str = "?";
+                 var ary = ["duration", "interval", "nflows"];
+    		 var dsname = myAgurim.getds();
+
+    		 if (dsname) {
+		   str += 'dsname=' + dsname;
+		 }
+                 if (document.getElementById('bps').checked == true) {
+                   str += 'criteria=byte';
+                 } else if (document.getElementById('pps').checked == true) {
+                   str += 'criteria=packet';
+                 }
+                 if (document.getElementById('json').checked == true) {
+                   str += '&' + 'outfmt=json';
+                 } else if (document.getElementById('debug').checked == true) {
+                   str += '&' + 'outfmt=text';
+                 }
+                 if (document.getElementById('proto').checked == true) {
+                   str += '&' + 'view=proto';
+                 } else if (document.getElementById('addr').checked == true) {
+                   str += '&' + 'view=addr';
+                 }
+                 for (var i = 0; i < ary.length; i++) {
+                   key = document.getElementById(ary[i]);
+		   if (key.value) {
+		     str += '&' + ary[i] + '=' + String(key.value);
+		   }
+		 }
+                 // input startTimeStamp
+                 key = document.getElementById("startDate");
+                 if (key.value) {
+                    str += '&' + 'startTimeStamp' + '=' + String(key.value);
+                    key = document.getElementById("startDateTime");
+                    if (key.value) { 
+                      str += 'T' + String(key.value);
+                    }
+                 }
+                 // input endTimeStamp
+                 key = document.getElementById("endDate");
+                 if (key.value) {
+                    str += '&' + 'endTimeStamp' + '=' + String(key.value);
+                    key = document.getElementById("endDateTime");
+                    if (key.value) { 
+                      str += 'T' + String(key.value);
+                    }
+                 }
+
+                 window.location = url + str;
+               }
+             }
+           }
+         });
+       });
+    });
+    </script> 
+  </body>
+</html>
