@@ -31,27 +31,28 @@ https://github.com/necoma/aguri2/
 
 # Install
 
-  0. populate data under <data_dir>.
+  0. populate data under 'data_dir'.
 
-  1. install the aguirm binary to /usr/local/bin/agurim.
+  1. install the aguirm binary to '/usr/local/bin/agurim'.
+
 	% cd src;
 	% make
 	% sudo make install
 
-  2. copy agurim/cgi-bin/* to <cgi-bin>.
-    - edit "myagurim.cgi".
-      - agurimcmd: absolute path to the agurim binary command.
-      - data_dir: path to the datasets (relative from the cgi-bin page).
-      - def_dsname: # default dataset name.
+  2. copy 'agurim/cgi-bin/*' to 'cgi-bin'.
+    - edit 'myagurim.cgi'.
+      - 'agurimcmd': absolute path to the agurim binary command.
+      - 'data_dir': path to the datasets (relative from the cgi-bin page).
+      - 'def_dsname': default dataset name.
 
-    if the python path isn't "/usr/local/bin/python", change
+    if the python path isn't '/usr/local/bin/python', change
     the path in the cgi scripts.
 
   3. copy `index.html detail.html about.html css/ img/ js/ fonts/`
-    to <agurim_home>.
-    - edit "index.html" and customize "datasets" if you have multiple datasets.
-    - edit "cgi_path" for <cgi-bin>, in "js/myagurim.js".
-    - edit "timeoffset", timezone offset, in "js/myagurim.js".
+    to 'agurim_home'.
+    - edit 'index.html' and customize 'datasets' if you have multiple datasets.
+    - edit 'cgi_path' for 'cgi-bin', in 'js/myagurim.js'.
+    - edit 'timeoffset', timezone offset, in 'js/myagurim.js'.
 
 # Usage
 
