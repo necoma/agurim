@@ -35,9 +35,7 @@ https://github.com/necoma/aguri2/
 
   1. install the aguirm binary to '/usr/local/bin/agurim'.
 
-	% cd src;
-	% make
-	% sudo make install
+	`% cd src; make; sudo make install`
 
   2. copy 'agurim/cgi-bin/*' to 'cgi-bin'.
     - edit 'myagurim.cgi'.
