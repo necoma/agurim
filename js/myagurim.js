@@ -84,6 +84,7 @@ new function() {
 						var endTime = String(myAgurim.TimeStampUpdate(query.endTime * 1000 + (3600000 * common.offset), 0));
 						var file = startTime + "to" + endTime + ".txt";
 						myAgurim.createDWfile(file, data);
+						query.outfmt = 'json'; // reset
 					}
 				})
 				.fail(function(jqXHR, textStatus, errorThrown) {
@@ -387,6 +388,8 @@ new function() {
 				} else if (res[0] == "duration") {
 					var val = parseInt(res[1]);
 					query.duration = isNaN(val) ? 0 : val;
+				} else if (res[0] == "filter") {
+					query.filter = res[1];
 				} else if (res[0] == "startTime") {
 					if (String(res.slice(1))) {
 						var str = String(res.slice(1));

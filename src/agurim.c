@@ -101,9 +101,10 @@ again:
 	files = argv;
 
 	if (n == 0) {
-		if (query.outfmt == REAGGREGATION)
+		if (query.outfmt == REAGGREGATION) {
+			fprintf(stderr, "reading from stdin...\n");
 			read_file(stdin); /* read from stdin */
-		else
+		} else
 			usage();
 	}
 	while (n > 0) {
