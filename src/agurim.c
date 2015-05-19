@@ -470,24 +470,30 @@ is_preambles(char *buf)
 		}
 		if (plot_phase && query.outfmt != REAGGREGATION &&
 		    t - plot_timestamps[time_slot] >= response.interval) {
-#if 1
-			/* check empty period */
-			if (t - plot_timestamps[time_slot] >= response.interval * 2) {
-				time_t t2;
-				/* there exists a blank interval,
-				 * insert a blank timeslot
-				 */
-				plot_addslot();
-				t2 = plot_timestamps[time_slot] + response.interval; 
-				plot_timestamps[++time_slot] = t2;
-			}
-#endif
 			plot_addslot();
 			if (proto_view == 0) {
 				plot_addcount(ip_hash);
 				plot_addcount(ip6_hash);
 			} else
 				plot_addcount(proto_hash);
+
+			/* check empty period */
+			if (t - plot_timestamps[time_slot] >= response.interval * 2) {
+				/* there exists a blank interval,
+				 * insert blank timeslots
+				 */
+				time_t t2;
+
+				plot_addslot();
+				t2 = plot_timestamps[time_slot] + response.interval; 
+				plot_timestamps[++time_slot] = t2;
+				if (t - t2 > response.interval) {
+					plot_addslot();
+					t2 = t - response.interval; 
+					plot_timestamps[++time_slot] = t2;
+				}
+			}
+
 			plot_timestamps[++time_slot] = t;
 			odhash_reset(ip_hash);
 			odhash_reset(ip6_hash);
