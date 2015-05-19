@@ -33,6 +33,9 @@ https://github.com/necoma/aguri2/
 
   0. populate data under 'data_dir'.
 
+   Use 'scripts/reaggregate.sh' for reaggregating datasets.
+   See 'scripts/README.md' for more detail.
+
   1. install the aguirm binary to '/usr/local/bin/agurim'.
 
 	`% cd src; make; sudo make install`
