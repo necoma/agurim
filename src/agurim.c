@@ -470,6 +470,18 @@ is_preambles(char *buf)
 		}
 		if (plot_phase && query.outfmt != REAGGREGATION &&
 		    t - plot_timestamps[time_slot] >= response.interval) {
+#if 1
+			/* check empty period */
+			if (t - plot_timestamps[time_slot] >= response.interval * 2) {
+				time_t t2;
+				/* there exists a blank interval,
+				 * insert a blank timeslot
+				 */
+				plot_addslot();
+				t2 = plot_timestamps[time_slot] + response.interval; 
+				plot_timestamps[++time_slot] = t2;
+			}
+#endif
 			plot_addslot();
 			if (proto_view == 0) {
 				plot_addcount(ip_hash);
