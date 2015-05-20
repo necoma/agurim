@@ -62,7 +62,7 @@ To update the daily summary on May 15, 2015:
 
 	reaggregate.sh -d /export/aguri2 -t 20150515
 
-Similarly, to update the day summary along with the monthly summary
+Similarly, to update the daily summary along with the monthly summary
 and yearly summary, add '23' hour to the time string.
 
 	reaggregate.sh -d /export/aguri2 -t 2015051523
