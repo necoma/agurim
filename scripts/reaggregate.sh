@@ -15,14 +15,16 @@ timestamp=""	# timestamp in "yyyymmddHH".  specify 23 for HH to
 rsync="/usr/local/bin/rsync"	# rsync program
 remote=""			# remote dir e.g., "agurim.example.com:/logdir"
 owner=""			# owner of logs e.g., "kjc:staff"
+verbose=false
 
 # process arguments
-while getopts "d:o:p:r:s:t:" opt; do
+while getopts "d:o:p:r:s:t:v" opt; do
     case $opt in
 	"d" ) logdir="$OPTARG" ;;
 	"o" ) owner="$OPTARG" ;;
 	"r" ) remote="$OPTARG" ;;
 	"t" ) timestamp="$OPTARG" ;;
+	"v" ) verbose=true ;;
 	* ) echo "Usage: reaggregate.sh [-d logdir] [-r host:path] [-o owner] [-t yyyymmddHH]" 1>&2
 	    exit 1 ;;
     esac
@@ -58,7 +60,7 @@ if [ "X${remote}" != "X" ]; then
     mkdir -p "${logdir}/${year}${month}"
     mkdir -p "${logdir}/${year}${month}/${year}${month}${day}"
     cmd="${rsync} -Cax ${optown} ${remote}/${year}${month}/${year}${month}${day}/ ${logdir}/${year}${month}/${year}${month}${day}"
-    eval echo "exec cmd: ${cmd}" 1>&2
+    ${verbose} && eval echo "exec cmd: ${cmd}" 1>&2
     eval "${cmd}"
 else
     # sanity check
@@ -77,7 +79,7 @@ res="300" # time resolution (5 minutes)
 files="${year}${month}${day}.??????.agr"
 
 cmd="${agurim} -i ${res} ${files} > ${dstfile}"
-echo "exec cmd: ${cmd}" 1>&2
+${verbose} && echo "exec cmd: ${cmd}" 1>&2
 eval "${cmd}"
 
 # if this is 11pm, update monthly and yearly files
@@ -87,7 +89,7 @@ if [ "$hour" = "23" ]; then
     dstfile="${year}${month}.agr"
     files="${year}${month}??/${year}${month}??.agr"
     cmd="${agurim} -i ${res} ${files} > ${dstfile}"
-    echo "exec cmd: ${cmd}" 1>&2
+    ${verbose} && echo "exec cmd: ${cmd}" 1>&2
     eval "${cmd}"
 
     # also update yearly data
@@ -96,7 +98,7 @@ if [ "$hour" = "23" ]; then
     dstfile="${year}.agr"
     files="${year}??/${year}??.agr"
     cmd="${agurim} -i ${res} ${files} > ${dstfile}"
-    echo "exec cmd: ${cmd}" 1>&2
+    ${verbose} && echo "exec cmd: ${cmd}" 1>&2
     eval "${cmd}"
 fi
 

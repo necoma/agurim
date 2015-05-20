@@ -18,16 +18,16 @@ the time: 1 hour before the current time.
 
 To re-aggregate today's dataset under a specified log directory:
 
-	reaggregate.sh [-d logdir]
+	reaggregate.sh [-d logdir] [-v]
 
 To copy today's data from a remote site and reaggregate under a
 specified log directory:
 
-	reaggregate.sh [-d logdir] [-r host:path] [-o owner]
+	reaggregate.sh [-d logdir] [-r host:path] [-o owner] [-v]
 
 To re-aggregate a specific day:
 
-	reaggregate.sh [-d logdir] [-t yyyymmddHH]
+	reaggregate.sh [-d logdir] [-t yyyymmddHH] [-v]
 
   + `-d logdir`:
     Specify the log directory.  The re-aggregated files are created under
@@ -47,6 +47,8 @@ To re-aggregate a specific day:
     updates the monthly summary and the yearly summary.
     Otherwise, agurify2.sh updates only the daily summary.
 
+  + `-v`: Enable the verbose mode.
+
 ## Examples
 
 To run reaggregate.sh at minute 1 every hour,
@@ -60,11 +62,11 @@ Similary, for copying the data from a remote host, and then, re-aggregate:
 
 To update the daily summary on May 15, 2015:
 
-	reaggregate.sh -d /export/aguri2 -t 20150515
+	reaggregate.sh -v -d /export/aguri2 -t 20150515
 
 Similarly, to update the daily summary along with the monthly summary
 and yearly summary, add '23' hour to the time string.
 
-	reaggregate.sh -d /export/aguri2 -t 2015051523
+	reaggregate.sh -v -d /export/aguri2 -t 2015051523
 
 
