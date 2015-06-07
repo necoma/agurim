@@ -33,7 +33,11 @@ done
 
 if [ "X${timestamp}" = "X" ]; then
     # if timestamp is not specified, use 'current time' - '1 hour'
-    timestamp=$(/bin/date -v -1H '+%Y %m %d %H')
+    osname=`uname -s`
+    case $osname in
+	Linux) timestamp=$(/bin/date -d '1 hour ago' '+%Y %m %d %H') ;;
+	*)     timestamp=$(/bin/date -v -1H '+%Y %m %d %H') ;;
+    esac
     set -- $timestamp
     year=$1
     month=$2
