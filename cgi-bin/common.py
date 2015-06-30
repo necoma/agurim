@@ -127,7 +127,7 @@ def generate_cmdargs(criteria, interval, threshold, nflows, duration, start_time
 	if end_time:
 		args += ' -E %s' % int(end_time)
 	if filter:
-		args += ' -f "%s"' % filter
+		args += ' -f "%s"' % filter.replace("%20", " ")
 	if view and view == 'proto':
 		args += ' -P'
 	if files:
