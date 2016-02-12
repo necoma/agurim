@@ -1,6 +1,6 @@
 // configuration variables
 var cgi_path = "cgi-bin/";	// path to the cgi-bin directory
-var timeoffset = 1;		// time offset
+var timeoffset = 9;		// time offset
 // end of configuration variables
 
 var html = {
