@@ -390,7 +390,7 @@ new function() {
 					query.duration = isNaN(val) ? 0 : val;
 				} else if (res[0] == "filter") {
 					query.filter = res[1];
-				} else if (res[0] == "startTime") {
+				} else if (res[0] == "startTimeStamp") {
 					if (String(res.slice(1))) {
 						var str = String(res.slice(1));
 						var res2 = str.split("T");
@@ -407,7 +407,7 @@ new function() {
 					} else {
 						query.startTime = 0;
 					}
-				} else if (res[0] == "endTime") {
+				} else if (res[0] == "endTimeStamp") {
 					if (String(res.slice(1))) {
 						var str = String(res.slice(1));
 						var res2 = str.split("T");
