@@ -175,19 +175,19 @@
 		     str += '&' + ary[i] + '=' + String(key.value);
 		   }
 		 }
-                 // input startTimeStamp
+                 // input startTime
                  key = document.getElementById("startDate");
                  if (key.value) {
-                    str += '&' + 'startTimeStamp' + '=' + String(key.value);
+                    str += '&' + 'startTime' + '=' + String(key.value);
                     key = document.getElementById("startDateTime");
                     if (key.value) { 
                       str += 'T' + String(key.value);
                     }
                  }
-                 // input endTimeStamp
+                 // input endTime
                  key = document.getElementById("endDate");
                  if (key.value) {
-                    str += '&' + 'endTimeStamp' + '=' + String(key.value);
+                    str += '&' + 'endTime' + '=' + String(key.value);
                     key = document.getElementById("endDateTime");
                     if (key.value) { 
                       str += 'T' + String(key.value);
