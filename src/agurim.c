@@ -70,6 +70,7 @@ struct _response response;
 int plot_phase;
 int is_finish;
 int proto_view = 0;
+int verbose = 0;
 static char *filter_str = NULL;
 
 static void
@@ -200,7 +201,7 @@ option_parse(int argc, void *argv)
 {
 	int ch;
 
-	while ((ch = getopt(argc, argv, "df:hi:m:n:ps:t:E:PS:")) != -1) {
+	while ((ch = getopt(argc, argv, "df:hi:m:n:ps:t:vDE:PS:")) != -1) {
 		switch (ch) {
 		case 'd':	/* Set the output format = txt */
 			query.outfmt = DEBUG;
@@ -244,6 +245,12 @@ option_parse(int argc, void *argv)
 			if (optarg[0] == '-')
 				usage();
 			query.threshold = strtod(optarg, NULL);
+			break;
+		case 'v':
+			verbose++;
+			break;
+		case 'D':
+			disable_heuristics = 1;  /* disable label heuristics */
 			break;
 		case 'E':
 			if (optarg[0] == '-')

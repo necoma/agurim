@@ -18,7 +18,7 @@ data twice.
 
 # Usage
 
-	agurim [-dhpP] [other options] [files]
+	agurim [-dhpvDP] [other options] [files]
 	    other options:
 		[-f filter] [-i interval] [-m byte|packet]
 		[-n nflows] [-s duration] [-t thresh]
@@ -59,6 +59,12 @@ data twice.
   + `-t thresh`:  
     Specify the threshold value for aggregation.  The unit is 1%.
     Default is 1 (1%).
+
+  + `-v`:
+    Print extra debug messages.
+
+  + `-D`:
+    Disable protocol specific heuristics for aggregation.
 
   + `-E endtime`:  
     Specify the endtime in Unix time.

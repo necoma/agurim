@@ -197,10 +197,12 @@ odflow_extract(struct odflow_hash *odfh,
 			if (!thresh_check(odfp, params->thresh, params->thresh2))
 				/* under the threshold */
 				continue;
-#if 0	/* for debug */
-			printf("extract: ");
-			odflow_print(odfp);
-			printf(" packet:%" PRIu64 "\n", odfp->packet);
+#if 1	/* for debug */
+			if (verbose) {
+				printf("# extract: ");
+				odflow_print(odfp);
+				printf(" packet:%" PRIu64 "\n", odfp->packet);
+			}
 #endif
 
 			/* book keeping extracted packets/bytes */
@@ -282,7 +284,7 @@ lattice_search(struct odflow *parent, int pl0, int pl1, int size, int pos,
 		do_aggregate = 0;
 
 	if (!disable_heuristics) {
-		int pl_max = (pl0 > pl1) ? pl0 : pl1;  /* longer prefixlen */
+		int pl_max = max(pl0, pl1);  /* longer prefixlen */
 
 		/* 
 		 * if both prefixlens are shorter than cutoff, do not
@@ -294,9 +296,9 @@ lattice_search(struct odflow *parent, int pl0, int pl1, int size, int pos,
 	if (!do_aggregate && !do_recurse)
 		return 0;
 
-#if 0	/* for debug */
-	if (do_aggregate) {
-		printf("lattice_search:[%d,%d] size=%d pos=%d do:%d,%d parent:",
+#if 1	/* for debug */
+	if (verbose && do_aggregate) {
+		printf("# lattice_search:[%d,%d] size=%d pos=%d do:%d,%d parent:",
 			pl0, pl1, size, pos, do_aggregate, do_recurse);
 		odflow_print(parent);
 		printf(": %" PRIu64 " (%.2f%%)\t%" PRIu64 " (%.2f%%)\n",
@@ -375,7 +377,7 @@ lattice_search(struct odflow *parent, int pl0, int pl1, int size, int pos,
 					}
 
 					if (!disable_heuristics) {
-						int subpl_min = (subpl0 < subpl1) ? subpl0 : subpl1;
+						int subpl_min = min(subpl0, subpl1);
 						if (subpl_min < params->cutoff &&
 							(subpl_min & (params->cutoffres - 1)) != 0)
 							continue;  /* skip this area */

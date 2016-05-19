@@ -130,6 +130,8 @@ extern struct _query query;
 extern struct _response response;
 
 extern int proto_view;
+extern int disable_heuristics;	/* do not use label heuristics */
+extern int verbose;
 
 extern int time_slot;
 extern time_t *plot_timestamps;
