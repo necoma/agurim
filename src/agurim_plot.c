@@ -542,8 +542,8 @@ aguri_odflow_print()
 				printf(" %.2f%% %.2f%% ",
 				    (double)odpp->byte / odfp->byte * 100,
 				    (double)odpp->packet / odfp->packet * 100);
+				n++;
 			}
-			n++;
 			odflow_free(odpp);
 		}
 		if (n == 0)
