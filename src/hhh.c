@@ -267,7 +267,7 @@ hhh_alloc(struct odflow_hash *old, struct odflow_hash **new,
 	struct odflow **_fl;
 	int i, n = 0;
 
-	_new = odhash_alloc();
+	_new = odhash_alloc(2048);
 
 	/* allocate flow buffer to store all the flow entries */
 	_fl = malloc(sizeof(struct odflow *) * old->nrecord);
@@ -276,7 +276,7 @@ hhh_alloc(struct odflow_hash *old, struct odflow_hash **new,
 
 	/* move all odflow entries from odflow_hash to odflow_list */
 	if (old->nrecord > 0)
-		for (i = 0; i < NBUCKETS; i++) {
+		for (i = 0; i < old->nbuckets; i++) {
 			while ((odfp = TAILQ_FIRST(&old->tbl[i].odfq_head)) != NULL) {
 				TAILQ_REMOVE(&old->tbl[i].odfq_head, odfp, odf_chain);
 				old->tbl[i].nrecord--;
@@ -303,7 +303,7 @@ hhh_alloc2(struct odflow *odfp, int af, struct odflow_hash **new, struct odflow 
 	struct odflow **newfl;
 	int bufsize, n = 0;
 
-	newhash = odhash_alloc();
+	newhash = odhash_alloc(2048);
 	/*
 	 * move odflow's odproto entries to odproto_list
 	 */
@@ -433,7 +433,7 @@ odflow_extract(struct odflow_hash *odfh, struct odflow **fl,
 	struct odflow *odfp;
 
 	/* walk through the odflow_hash */
-        for (i = 0; i < NBUCKETS; i++) {
+        for (i = 0; i < odfh->nbuckets; i++) {
                 while ((odfp = TAILQ_FIRST(&odfh->tbl[i].odfq_head)) != NULL) {
                         TAILQ_REMOVE(&odfh->tbl[i].odfq_head, odfp, odf_chain);
 			odfh->tbl[i].nrecord--;

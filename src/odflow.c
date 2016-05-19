@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2015 WIDE Project.
+ * Copyright (C) 2012-2016 WIDE Project.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,30 +43,85 @@ struct odflow_hash *ip_hash;
 struct odflow_hash *ip6_hash;
 struct odflow_hash *proto_hash;
 
-static struct odflow *odflow_alloc(struct odflow_spec *odfsp);
 static struct odflow *odproto_lookup(struct odflow *odfp, struct odflow_spec *odpsp, int af);
+
+/*
+ * The following hash function is adapted from "Hash Functions" by Bob Jenkins
+ * ("Algorithm Alley", Dr. Dobbs Journal, September 1997).
+ *
+ * http://www.burtleburtle.net/bob/hash/spooky.html
+ */
+#define mix(a, b, c)                                                    \
+do {                                                                    \
+	a -= b; a -= c; a ^= (c >> 13);                                 \
+	b -= c; b -= a; b ^= (a << 8);                                  \
+	c -= a; c -= b; c ^= (b >> 13);                                 \
+	a -= b; a -= c; a ^= (c >> 12);                                 \
+	b -= c; b -= a; b ^= (a << 16);                                 \
+	c -= a; c -= b; c ^= (b >> 5);                                  \
+	a -= b; a -= c; a ^= (c >> 3);                                  \
+	b -= c; b -= a; b ^= (a << 10);                                 \
+	c -= a; c -= b; c ^= (b >> 15);                                 \
+} while (/*CONSTCOND*/0)
+
+static inline uint32_t
+slot_fetch(uint8_t *v1, uint8_t *v2, int n)
+{
+        uint32_t a = 0x9e3779b9, b = 0x9e3779b9, c = 0;
+        uint8_t *p; 
+    
+        p = v1;
+        b += p[3];
+        b += p[2] << 24; 
+        b += p[1] << 16; 
+        b += p[0] << 8;
+    
+        p = v2;
+        a += p[3];
+        a += p[2] << 24; 
+        a += p[1] << 16; 
+        a += p[0] << 8;
+
+        mix(a, b, c); 
+
+        return (c & (n - 1));  /* n must be power of 2 */
+}
 
 void
 odhash_init()
 {
-	ip_hash = odhash_alloc();
-	ip6_hash = odhash_alloc();
+	ip_hash = odhash_alloc(1024);
+	ip6_hash = odhash_alloc(1024);
 	if (proto_view)
-		proto_hash = odhash_alloc();
+		proto_hash = odhash_alloc(512);
 }
 
+/*
+ * allocate odflow hash with the given number of buckets, n.
+ * n is rounded up to the next power of 2. limit the max to 4096.
+ */
 struct odflow_hash *
-odhash_alloc(void)
+odhash_alloc(int n)
 {
 	struct odflow_hash *odfh;
-	int i;
+	int i, buckets;
 
 	if ((odfh = calloc(1, sizeof(struct odflow_hash))) == NULL)
 		err(1, "odhash_alloc: malloc");
+
+	/* round up n to the next power of 2 */
+	buckets = 1;
+	while (buckets < n) {
+		buckets *= 2;
+		if (buckets == 4096)
+			break;	/* max size */
+	}
+
 	/* allocate a hash table */
-	if ((odfh->tbl = calloc(NBUCKETS, sizeof(struct odf_tailq))) == NULL)
+	if ((odfh->tbl = calloc(buckets, sizeof(struct odf_tailq))) == NULL)
 		err(1, "odhash_alloc: malloc");
-	for (i = 0; i < NBUCKETS; i++) {
+	odfh->nbuckets = buckets;
+	for (i = 0; i < buckets; i++) {
 		TAILQ_INIT(&odfh->tbl[i].odfq_head);
 		odfh->tbl[i].nrecord = 0;
 	}
@@ -92,7 +147,7 @@ odhash_reset(struct odflow_hash *odfh)
 
 	if (odfh->nrecord == 0)
 		return;
-        for (i = 0; i < NBUCKETS; i++) {
+        for (i = 0; i < odfh->nbuckets; i++) {
                 while ((odfp = TAILQ_FIRST(&odfh->tbl[i].odfq_head)) != NULL) {
 			TAILQ_REMOVE(&odfh->tbl[i].odfq_head, odfp, odf_chain);
 			odfh->tbl[i].nrecord--;
@@ -148,7 +203,7 @@ odproto_addcount(struct odflow *odfp, struct odflow_spec *odpsp, int af,
 	odpp->packet += packet;
 }
 
-static struct odflow *
+struct odflow *
 odflow_alloc(struct odflow_spec *odfsp)
 {
 	struct odflow *odfp;
@@ -192,7 +247,7 @@ odflow_lookup(struct odflow_hash *odfh, struct odflow_spec *odfsp)
 	int slot;
 
 	/* get slot id */
-	slot = slot_fetch(odfsp->src, odfsp->dst);
+	slot = slot_fetch(odfsp->src, odfsp->dst, odfh->nbuckets);
 
 	/* find entry */
         TAILQ_FOREACH(odfp, &(odfh->tbl[slot].odfq_head), odf_chain) {

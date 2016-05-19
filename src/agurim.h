@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2015 WIDE Project.
+ * Copyright (C) 2012-2016 WIDE Project.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,6 @@
 #include <stdint.h>
 #include <time.h>
 
-#define NBUCKETS	512
 #define MAXLEN		16
 
 enum aggr_criteria {
@@ -75,6 +74,7 @@ struct odflow_hash {
 	uint64_t packet;
 	uint64_t byte;
 	int nrecord;	/* number of records */
+	int nbuckets;	/* number of buckets for tbl */
 };
 
 struct odflow {
@@ -144,7 +144,6 @@ void prefix_set(uint8_t *r0, uint8_t len, uint8_t *r1, int bytesize);
 void odflow_print(struct odflow *odfp);
 void odproto_print(struct odflow *odpp);
 void odproto_countfrac_print(struct odflow *odpp);
-uint32_t slot_fetch(uint8_t *v1, uint8_t *v2);
 void odflow_countfrac_print(struct odflow *odfp);
 
 #define CL_INLINE	/* use inline macros */
@@ -166,7 +165,7 @@ int cl_add(struct cache_list *clp, int i, uint64_t val);
 
 /* odflow.c */
 void odhash_init();
-struct odflow_hash *odhash_alloc(void);
+struct odflow_hash *odhash_alloc(int n);
 void odhash_free(struct odflow_hash *odfh);
 void odhash_reset(struct odflow_hash *odfh);
 struct odflow *
@@ -175,6 +174,7 @@ void odproto_addcount(struct odflow *odfp, struct odflow_spec *odpsp, int af,
     uint64_t byte, uint64_t packet);
 struct odflow *
 odflow_lookup(struct odflow_hash *odfh, struct odflow_spec *odfsp);
+struct odflow *odflow_alloc(struct odflow_spec *odfsp);
 void odflow_free(struct odflow *odfp);
 
 #define max(a, b)	(((a)>(b))?(a):(b))

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2015 WIDE Project.
+ * Copyright (C) 2012-2016 WIDE Project.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -129,7 +129,7 @@ plot_addcount(struct odflow_hash *odfh)
 	if (odfh->nrecord == 0)  /* no traffic? */
 		return;
 
-        for (i = 0; i < NBUCKETS; i++) {
+        for (i = 0; i < odfh->nbuckets; i++) {
                 while ((odfp1 = TAILQ_FIRST(&odfh->tbl[i].odfq_head)) != NULL) {
                         TAILQ_REMOVE(&odfh->tbl[i].odfq_head, odfp1, odf_chain);
 			odfh->tbl[i].nrecord--;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2015 WIDE Project.
+ * Copyright (C) 2012-2016 WIDE Project.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,50 +38,8 @@
 
 #include "agurim.h"
 
-/*
- * The following hash function is adapted from "Hash Functions" by Bob Jenkins
- * ("Algorithm Alley", Dr. Dobbs Journal, September 1997).
- *
- * http://www.burtleburtle.net/bob/hash/spooky.html
- */
-#define mix(a, b, c)                                                    \
-do {                                                                    \
-	a -= b; a -= c; a ^= (c >> 13);                                 \
-	b -= c; b -= a; b ^= (a << 8);                                  \
-	c -= a; c -= b; c ^= (b >> 13);                                 \
-	a -= b; a -= c; a ^= (c >> 12);                                 \
-	b -= c; b -= a; b ^= (a << 16);                                 \
-	c -= a; c -= b; c ^= (b >> 5);                                  \
-	a -= b; a -= c; a ^= (c >> 3);                                  \
-	b -= c; b -= a; b ^= (a << 10);                                 \
-	c -= a; c -= b; c ^= (b >> 15);                                 \
-} while (/*CONSTCOND*/0)
-
 static uint8_t prefixmask[8]
     = { 0x00, 0x80, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc, 0xfe };
-
-uint32_t
-slot_fetch(uint8_t *v1, uint8_t *v2)
-{
-        uint32_t a = 0x9e3779b9, b = 0x9e3779b9, c = 0;
-        uint8_t *p; 
-    
-        p = v1;
-        b += p[3];
-        b += p[2] << 24; 
-        b += p[1] << 16; 
-        b += p[0] << 8;
-    
-        p = v2;
-        a += p[3];
-        a += p[2] << 24; 
-        a += p[1] << 16; 
-        a += p[0] << 8;
-
-        mix(a, b, c); 
-
-        return (c & (NBUCKETS-1));
-}
 
 /* helper for qsort: compare the sum of prefix length */
 int
