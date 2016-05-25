@@ -247,8 +247,7 @@ odflow_extract(struct odflow_hash *odfh,
  *  IPv4:
  *   - when prefixlen < 16, do not aggregate beyond 8 bit boundary
  *  IPv6:
- *   - do not aggregate the lower 64 bits (inside host ID)
- *   - do not aggregate beyound 4 bit boundary
+ *   - do not aggregate the lower 64 bits (inside interface ID)
  *   - when prefixlen < 32, do not aggregate beyond 16 bit boundary
  *  protocols:
  *   - do not aggregate the protocols and ports
@@ -455,7 +454,11 @@ find_hhh(struct odflow_hash *hash, int bitlen, uint64_t thresh, uint64_t thresh2
 	case 128: /* IPv6 address */
 		root->af = AF_INET6;
 		if (!disable_heuristics) {
+#if 1
+			params.minsize = 1;
+#else
 			params.minsize = 4;
+#endif
 			params.cutoff = 32;
 			params.cutoffres = 16;
 		}
