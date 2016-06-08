@@ -194,9 +194,11 @@ odflow_extract(struct odflow_hash *odfh,
                 while ((odfp = TAILQ_FIRST(&odfh->tbl[i].odfq_head)) != NULL) {
                         TAILQ_REMOVE(&odfh->tbl[i].odfq_head, odfp, odf_chain);
 			odfh->tbl[i].nrecord--;
-			if (!thresh_check(odfp, params->thresh, params->thresh2))
-				/* under the threshold */
+			if (!thresh_check(odfp, params->thresh, params->thresh2)) {
+				/* under the threshold, discard this entry */
+				odflow_free(odfp);
 				continue;
+			}
 #if 1	/* for debug */
 			if (verbose) {
 				printf("# extract: ");
