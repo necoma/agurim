@@ -46,6 +46,7 @@
 #include <unistd.h>
 
 #include "agurim.h"
+#include "aguri_flow.h"
 
 static void init(int argc, char **argv);
 static void finish();
@@ -64,6 +65,7 @@ static int protospec_parse(char *buf, struct odflow_spec *odpsp,
 static char *proto_parse(char **strp, uint64_t byte, uint64_t packet,
     struct odflow_spec *odpsp, uint64_t *byte2, uint64_t *packet2);
 static int match_filter(struct odflow_spec *r);
+static int read_flow(FILE *fp);
 
 struct _query query;
 struct _response response;
@@ -71,13 +73,14 @@ int plot_phase;
 int is_finish;
 int proto_view = 0;
 int verbose = 0;
+static int flow_mode = 0;  /* read binary aguri_flow inputs from stdin */
 static char *filter_str = NULL;
 
 static void
 usage()
 {
 	fprintf(stderr, "usage:\n");
-	fprintf(stderr, "  agurim2 [-dhpP]\n");
+	fprintf(stderr, "  agurim2 [-dhpFP]\n");
 	fprintf(stderr, "          [-f '<src> <dst>' or '<proto>:<sport>:<dport>'\n");
 	fprintf(stderr, "          [-m criteria (byte/packet)]\n"); 
 	fprintf(stderr, "          [-n nflows] [-s duration] \n");
@@ -105,7 +108,10 @@ again:
 		if (query.outfmt == REAGGREGATION) {
 			if (isatty(fileno(stdin)))
 				fprintf(stderr, "reading from stdin...\n");
-			read_file(stdin); /* read from stdin */
+			if (flow_mode)
+				read_flow(stdin); /* read binary aguri_flow */
+			else
+				read_file(stdin); /* read from stdin */
 		} else
 			usage();
 	}
@@ -201,7 +207,7 @@ option_parse(int argc, void *argv)
 {
 	int ch;
 
-	while ((ch = getopt(argc, argv, "df:hi:m:n:ps:t:vDE:PS:")) != -1) {
+	while ((ch = getopt(argc, argv, "df:hi:m:n:ps:t:vDE:FPS:")) != -1) {
 		switch (ch) {
 		case 'd':	/* Set the output format = txt */
 			query.outfmt = DEBUG;
@@ -250,12 +256,15 @@ option_parse(int argc, void *argv)
 			verbose++;
 			break;
 		case 'D':
-			disable_heuristics = 1;  /* disable label heuristics */
+			disable_heuristics++;  /* disable label heuristics */
 			break;
 		case 'E':
 			if (optarg[0] == '-')
 				usage();
 			query.end_time = strtol(optarg, NULL, 10);
+			break;
+		case 'F':
+			flow_mode = 1;
 			break;
 		case 'P':
 			proto_view = 1;
@@ -775,3 +784,123 @@ match_filter(struct odflow_spec *odfsp)
 		return (0);
 	return (1);
 }
+
+#if 1 /* experimental: read aguri flows for evaluation purposes */
+/*
+ * check aguri flow timestamp: returns 1 to process this packets, 0 to
+ * skip, and -1 to finish.
+ * XXX works only for REAGGREGATION at the moment.
+ */
+static int
+check_flowtime(const struct aguri_flow *agf)
+{
+	static time_t ts_max;
+	time_t ts;
+
+	if (query.outfmt != REAGGREGATION)
+		errx(1, "flow mode is only for reaggregation!");
+
+	ts = (time_t)ntohl(agf->agflow_last);
+	if (ts > ts_max)
+		ts_max = ts;	/* keep track of the max value of ts */
+	ts = ts_max;  /* XXX we want ts to be monotonic */
+
+	if (query.start_time > ts)
+		return (0);
+	if (response.start_time == 0)
+		response.start_time = ts;
+
+	response.current_time = ts;
+	if (ts - response.start_time >= response.interval) {
+		hhh_run();
+		plot_showdata();
+		plot_finish();
+		odhash_reset(ip_hash);
+		odhash_reset(ip6_hash);
+		response.start_time = ts;
+	}
+	if (query.end_time && query.end_time < ts)
+		return (-1);  /* we are beyond the end time */
+	if (query.duration && ts - response.start_time > query.duration)
+		return (-1);  /* ditto */
+
+	response.end_time = ts;
+
+	response.max_interval = max(response.max_interval,
+		    ts - response.current_time);
+	
+	return (1);  /* process this flow record */
+}
+
+/* convert an aguri_flow record into address/port odflows */
+static int
+do_agflow(const struct aguri_flow *agf)
+{
+	struct odflow *odfp;
+	struct odflow_spec odfsp;
+	struct odflow_spec odpsp;
+	uint64_t byte, packet;
+	int af, len;
+
+	byte   = ntohl(agf->agflow_bytes);
+	packet = ntohl(agf->agflow_packets);
+
+	memset(&odfsp, 0, sizeof(odfsp));
+	memset(&odpsp, 0, sizeof(odpsp));
+	switch(agf->agflow_fs.fs_ipver) {
+	case 4:
+		af = AF_INET;
+		len = 32;
+		break;
+	case 6:
+		af = AF_INET6;
+		len = 128;
+		break;
+	}
+	memcpy(&odfsp.src, agf->agflow_fs.fs_srcaddr, len / 8);
+	memcpy(&odfsp.dst, agf->agflow_fs.fs_dstaddr, len / 8);
+	odfsp.srclen = len;
+	odfsp.dstlen = len;
+	odfp = odflow_addcount(&odfsp, af, byte, packet);
+
+	odpsp.src[0] = agf->agflow_fs.fs_prot;
+	odpsp.dst[0] = agf->agflow_fs.fs_prot;
+	memcpy(&odpsp.src[1], &agf->agflow_fs.fs_sport, 2);
+	memcpy(&odpsp.dst[1], &agf->agflow_fs.fs_dport, 2);
+	odpsp.srclen = 24;
+	odpsp.dstlen = 24;
+	odproto_addcount(odfp, &odpsp, AF_LOCAL, byte, packet);
+
+	return (1);
+}
+
+static int
+read_flow(FILE *fp)
+{
+	struct aguri_flow agflow;
+	int rval;
+	unsigned long n = 0;
+
+	fprintf(stderr, "agurim: reading flow info from stdin...\n");
+	while (1) {
+		if (fread(&agflow, sizeof(agflow), 1, fp) != 1) {
+			if (feof(fp)) {
+				fprintf(stderr, "\n read %lu flows\n", n);
+				return (0);
+			}
+			warn("fread failed!");
+			return (-1);
+		}
+
+		rval = check_flowtime(&agflow);
+		if (rval < 0)	/* the duration is expired */
+			break;
+		if (rval > 0)
+			do_agflow(&agflow);
+		n++;
+		if (verbose && n % 10000 == 0)
+			fprintf(stderr, "+");
+	}
+	return (0);
+}
+#endif /*experimental */

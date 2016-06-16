@@ -632,7 +632,7 @@ void hhh_run()
 		/* calculate threshold */
 		thresh  = odfp->byte   * query.threshold / 100;
 		thresh2 = odfp->packet * query.threshold / 100;
-		if (!disable_heuristics) {
+		if (disable_heuristics < 2) {
 			/* increase the threshold for sub-attributes */
 			thresh *= 4;
 			thresh2 *= 4;

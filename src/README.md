@@ -18,7 +18,7 @@ data twice.
 
 # Usage
 
-	agurim [-dhpvDP] [other options] [files]
+	agurim [-dhpvDFP] [other options] [files]
 	    other options:
 		[-f filter] [-i interval] [-m byte|packet]
 		[-n nflows] [-s duration] [-t thresh]
@@ -68,6 +68,10 @@ data twice.
 
   + `-E endtime`:  
     Specify the endtime in Unix time.
+
+  + `-F`:  
+    Read binary aguri flow records, instead of text-based aguri2 output,
+    from stdin.  This is for testing purposes.
 
   + `-P`:  
     Use protocol and port for the main attribute, and adress for
