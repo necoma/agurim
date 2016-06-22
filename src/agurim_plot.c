@@ -496,6 +496,10 @@ aguri_preamble_print()
 		else
 			printf("%%AvgRate: %.2fbps %.2fpps\n",
 			    avg_byte, avg_pkt);
+#if 1
+		printf("%%total: %"PRIu64" bytes  %"PRIu64" packets\n",
+			response.total_byte, response.total_packet);
+#endif
 	}
 
 	if (query.criteria == BYTE)
