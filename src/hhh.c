@@ -388,11 +388,13 @@ lattice_search(struct odflow *parent, int pl0, int pl1, int size, int pos,
 					packet = odfp->packet;
 					byte   = odfp->byte;
 					n = lattice_search(odfp, subpl0, subpl1, subsize, subpos, params);
-					if (n > 0 && do_aggregate) {
-						/* propagate extracted pkts/bytes to parent */
+					if (n > 0) {
 						nflows += n;
-						parent->packet -= packet - odfp->packet;
-						parent->byte -= byte - odfp->byte;
+						if (do_aggregate) {
+							/* propagate extracted pkts/bytes to parent */
+							parent->packet -= packet - odfp->packet;
+							parent->byte -= byte - odfp->byte;
+						}
 					}
 				}
 				if (!do_aggregate) /* XXX for dummy_hash */
