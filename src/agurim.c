@@ -168,9 +168,9 @@ query_init()
 		query.outfmt = REAGGREGATION;
 	if (!query.threshold) {
 		if (query.outfmt == REAGGREGATION)
-			query.threshold = 1;
+			query.threshold = 1; /* 1% for the thresh */
 		else
-			query.threshold = 3; // or query.threshold = 10;
+			query.threshold = 3; /* 3% otherwise */
 	}
 	if (!query.nflows && query.outfmt != REAGGREGATION)
 		query.nflows = 7;
@@ -801,9 +801,10 @@ check_flowtime(const struct aguri_flow *agf)
 		errx(1, "flow mode is only for reaggregation!");
 
 	ts = (time_t)ntohl(agf->agflow_last);
-	if (ts > ts_max)
+	if (ts < ts_max)
+		ts = ts_max;  /* XXX we want ts to be monotonic */
+	else
 		ts_max = ts;	/* keep track of the max value of ts */
-	ts = ts_max;  /* XXX we want ts to be monotonic */
 
 	if (query.start_time > ts)
 		return (0);

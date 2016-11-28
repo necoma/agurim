@@ -47,6 +47,7 @@ enum out_format {
 	JSON
 };
 
+/* origin-destination flow spec */
 struct odflow_spec {
 	uint8_t src[MAXLEN];	/* source ip */
 	uint8_t dst[MAXLEN];	/* destination ip */
@@ -64,6 +65,7 @@ struct cache_list {
 	int	cl_max;		/* current allocation */
 };
 
+/* odflow_hash is used for odflow accounting */
 struct odf_tailq {
 	TAILQ_HEAD(odfqh, odflow) odfq_head;
 	int nrecord;	/* number of record */
@@ -82,9 +84,12 @@ struct odflow {
 	int af;
 	uint64_t packet;
 	uint64_t byte;
-	struct cache_list *odf_cache;
-	TAILQ_ENTRY(odflow) odf_chain; /* for hash table */
-	struct odf_tailq odf_odpq;
+	struct cache_list *odf_cache; /* keeps odflow indices during
+				       * aggregation (and plot counts
+				       * during plotting)
+				       */
+	TAILQ_ENTRY(odflow) odf_chain;  /* for hash table */
+	struct odf_tailq odf_odpq;  /* list of lower odflows for this flow */
 };
 
 struct _query {

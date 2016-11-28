@@ -408,9 +408,6 @@ lattice_search(struct odflow *parent, int pl0, int pl1, int size, int pos,
 	if (do_aggregate) {
 		if (thresh_check(parent, params->thresh, params->thresh2))
 			nflows += odflow_extract(my_hash, parent, params);
-
-		if (my_hash->nrecord > 0)
-			odhash_reset(my_hash);
 		odhash_free(my_hash);
 	}
 
@@ -657,7 +654,6 @@ void hhh_run()
 	}
 
 	if (dummy_hash != NULL) {
-		odhash_reset(dummy_hash);
 		odhash_free(dummy_hash);
 		dummy_hash = NULL;
 	}

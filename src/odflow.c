@@ -107,7 +107,7 @@ odhash_alloc(int n)
 	int i, buckets;
 
 	if ((odfh = calloc(1, sizeof(struct odflow_hash))) == NULL)
-		err(1, "odhash_alloc: malloc");
+		err(1, "odhash_alloc: calloc");
 
 	/* round up n to the next power of 2 */
 	buckets = 1;
@@ -119,7 +119,7 @@ odhash_alloc(int n)
 
 	/* allocate a hash table */
 	if ((odfh->tbl = calloc(buckets, sizeof(struct odf_tailq))) == NULL)
-		err(1, "odhash_alloc: malloc");
+		err(1, "odhash_alloc: calloc");
 	odfh->nbuckets = buckets;
 	for (i = 0; i < buckets; i++) {
 		TAILQ_INIT(&odfh->tbl[i].odfq_head);
@@ -135,10 +135,13 @@ odhash_alloc(int n)
 void
 odhash_free(struct odflow_hash *odfh)
 {
+	if (odfh->nrecord > 0)
+		odhash_reset(odfh);
 	free(odfh->tbl);
 	free(odfh);
 }
 
+/* odhash_reset re-initialize the given odhash */
 void
 odhash_reset(struct odflow_hash *odfh)
 {
@@ -208,11 +211,9 @@ odflow_alloc(struct odflow_spec *odfsp)
 {
 	struct odflow *odfp;
 
-	odfp = malloc(sizeof(struct odflow));
-	if (odfp == NULL)
+	if ((odfp = calloc(1, sizeof(struct odflow))) == NULL)
 		err(1, "cannot allocate entry cache");
 
-	memset(odfp, 0, sizeof(struct odflow));
 	TAILQ_INIT(&odfp->odf_odpq.odfq_head);
 	odfp->odf_odpq.nrecord = 0;
 	memcpy(&(odfp->s), odfsp, sizeof(struct odflow_spec));
