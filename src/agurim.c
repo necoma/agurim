@@ -27,6 +27,11 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __linux__
+#define _XOPEN_SOURCE	500 /* for strptime in linux */
+#define _DEFAULT_SOURCE	/* for strsep in linux */
+#endif
+
 #include <sys/stat.h>
 #include <sys/socket.h>
 
@@ -42,7 +47,6 @@
 #include <err.h>
 #include <errno.h>
 #include <math.h>
-#define _XOPEN_SOURCE	/* for strptime in linux */
 #include <time.h>
 #include <unistd.h>
 
@@ -831,7 +835,7 @@ do_agflow(const struct aguri_flow *agf)
 	struct odflow_spec odfsp;
 	struct odflow_spec odpsp;
 	uint64_t byte, packet;
-	int af, len;
+	int af = AF_INET, len = 0;
 
 	byte   = ntohl(agf->agflow_bytes);
 	packet = ntohl(agf->agflow_packets);

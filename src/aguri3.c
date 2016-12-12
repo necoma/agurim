@@ -542,7 +542,7 @@ do_agflow(const struct aguri_flow *agf)
 	struct odflow_spec odfsp;
 	struct odflow_spec odpsp;
 	uint64_t byte, packet;
-	int af, len;
+	int af = AF_INET, len = 0;
 
 	byte   = ntohl(agf->agflow_bytes);
 	packet = ntohl(agf->agflow_packets);

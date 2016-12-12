@@ -95,7 +95,6 @@ void
 pcap_read(const char *dumpfile, const char *interface, 
 	const char *filter_cmd, int snaplen)
 {
-	int fd;
 	const char *device = NULL;
 	struct bpf_program bprog;
 	int n = 0;
@@ -129,8 +128,6 @@ pcap_read(const char *dumpfile, const char *interface,
 
 	net_reader = lookup_printer(pcap_datalink(pd));
 
-	fd = fileno(pcap_file(pd));
-
 	if (device != NULL) {
 		/* let user own process after interface has been opened */
 		setuid(getuid());
@@ -138,6 +135,7 @@ pcap_read(const char *dumpfile, const char *interface,
 		{
 			/* check the buffer size */
 			u_int bufsize;
+			int fd = fileno(pcap_file(pd));
 
 			if (ioctl(fd, BIOCGBLEN, (caddr_t)&bufsize) < 0)
 				perror("BIOCGBLEN");
