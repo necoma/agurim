@@ -675,7 +675,7 @@ hhh_run(struct response *resp)
 		}
 	}
 
-#if 1 /* not really needed but to make odflow_stats clean */
+#ifndef NDEBUG /* not really needed but to make odflow_stats clean */
 	if (dummy_hash != NULL) {
 		odhash_free(dummy_hash);
 		dummy_hash = NULL;

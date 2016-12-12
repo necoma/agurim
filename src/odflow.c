@@ -317,7 +317,8 @@ odproto_lookup(struct odflow *odfp, struct odflow_spec *odpsp, int af)
 		}
 	}
 
-	if (odpp == NULL && odfp->odf_odpq.nrecord >= ODPQ_MAXENTRIES) {
+	if (odpp == NULL && odfp->odf_odpq.nrecord >= ODPQ_MAXENTRIES &&
+		!disable_heuristics) {
 		/* protection against port scans: */
 		odpp = odproto_quickmerge(&odfp->odf_odpq, odpsp);
 	}

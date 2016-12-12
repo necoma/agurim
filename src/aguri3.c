@@ -30,6 +30,9 @@
 #include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#ifdef __FreeBSD__
+#include <sys/rtprio.h>
+#endif
 
 #include <arpa/inet.h>
 
@@ -52,6 +55,17 @@
 #include "agurim.h"
 #include "aguri_flow.h"
 
+/*
+ * when the 2-stage aggregation is used, a subset of response is
+ * saved and restored.
+ */
+struct saved_results {
+	time_t start_time;
+	time_t end_time;
+	uint64_t total_byte, total_packet;
+	struct odf_tailq odfq;  /* odflow queue for results */
+};
+
 void pcap_read(const char *dumpfile, const char *interface,
 	const char *filter_cmd, int snaplen);
 
@@ -64,6 +78,8 @@ static struct response *response_alloc(void);
 static void option_parse(int argc, void *argv);
 static int read_flow(FILE *fp);
 static void switch_response(void);
+static void save_results(struct response *resp, struct saved_results *prev);
+static int restore_results(struct response *resp, struct saved_results *prev);
 static void *aggregator(void *thdata);
 static int pidfile(const char *pid_file);
 
@@ -88,6 +104,7 @@ int is_finish;
 int proto_view = 0;
 int verbose = 0;
 int debug = 0;
+int use_rtprio = 0;
 int max_hashentries = 1000000; /* max odflows in a hash: 1M entries.
 				* make a summary when a hash exeeds this
 				* value so as to avoid slowdown */
@@ -105,7 +122,7 @@ usage()
 	fprintf(stderr, "         [-r pcapfile] [-s pcap_snaplen]\n");
 	fprintf(stderr, "         [-t thresh_percentage] [-w outputfile]\n");
 	fprintf(stderr, "         [-H max_hashentries] [-I pcap_interface]\n");
-	fprintf(stderr, "         [-S start_time] [-E end_time]\n");
+	fprintf(stderr, "         [-P rtprio] [-S start_time] [-E end_time]\n");
 	exit(1);
 }
 
@@ -145,6 +162,21 @@ int main(int argc, char **argv)
 	sigaction(SIGQUIT, &act, NULL);
 	act.sa_handler = sig_hup;
 	sigaction(SIGHUP, &act, NULL);
+
+#ifdef __FreeBSD__
+	/* set the realtime priority */
+	if (use_rtprio > 0) {
+		struct rtprio srtp;
+
+		srtp.type = RTP_PRIO_REALTIME;
+		srtp.prio = use_rtprio;  /* 0 (hi) -> RTP_PRIO_MAX (31,lo) */
+
+		if (rtprio(RTP_SET, getpid(), &srtp) < 0)
+			err(1, "rtprio");
+		else
+			fprintf(stderr, "set realtime priority:%d\n", use_rtprio);
+	}
+#endif
 	
 	if (isatty(fileno(stdin))) {
 		if (pcapfile != NULL)
@@ -242,7 +274,7 @@ option_parse(int argc, void *argv)
 	int ch;
 	char *cp;
 
-	while ((ch = getopt(argc, argv, "c:df:hi:m:p:r:s:t:vw:DE:H:I:S:")) != -1) {
+	while ((ch = getopt(argc, argv, "c:df:hi:m:p:r:s:t:vw:DE:H:I:P:S:")) != -1) {
 		switch (ch) {
 		case 'c':
 			query.count = strtol(optarg, NULL, 10);
@@ -301,6 +333,9 @@ option_parse(int argc, void *argv)
 		case 'I':
 			pcap_interface = optarg;
 			break;
+		case 'P':
+			use_rtprio = strtol(optarg, NULL, 10);
+			break;
 		case 'S':
 			query.start_time = strtol(optarg, NULL, 10);
 			break;
@@ -338,22 +373,10 @@ switch_response(void)
 	}
 }
 
-/*
- * when the 2-stage aggregation is used, a subset of response is
- * saved and restored.
- */
-struct saved_results {
-	time_t start_time;
-	time_t end_time;
-	struct odf_tailq odfq;  /* odflow queue for results */
-	uint64_t total_byte, total_packet;
-};
-
 static void
 save_results(struct response *resp, struct saved_results *prev)
 {
-	if (prev->start_time == 0)
-		prev->start_time = resp->start_time;
+	prev->start_time   = resp->start_time;
 	prev->end_time     = resp->end_time;
 	prev->total_byte   = resp->total_byte;
 	prev->total_packet = resp->total_packet;
@@ -362,21 +385,28 @@ save_results(struct response *resp, struct saved_results *prev)
 	odfq_moveall(&resp->odfq, &prev->odfq);
 }
 
-static void
+/* resrore saved results.  returns 1 when output is required */
+static int
 restore_results(struct response *resp, struct saved_results *prev)
 {
 	struct odflow *odfp;
 	struct odflow_hash *odfh;
+	int resid, need_output = 0;
 
-	/* sanity check: if idle for a long time, discard the saved results */
-	if (resp->start_time - prev->start_time > query.output_interval) {
+	/* if end_time is close to the output interval boundary, output */
+	resid = resp->end_time % query.output_interval;
+	if (resid == 0 || resid >= query.output_interval - 2)
+		need_output = 1;
+
+	/* if idle for more than output_interval, discard the saved results */
+	if (resp->end_time - prev->start_time > query.output_interval + 2) {
 		while ((odfp = TAILQ_FIRST(&prev->odfq.odfq_head)) != NULL) {
 			TAILQ_REMOVE(&prev->odfq.odfq_head, odfp, odf_chain);
 			prev->odfq.nrecord--;
 			odflow_free(odfp);
 		}
 		prev->start_time = 0;
-		return;
+		return (need_output);
 	}
 	
 	resp->start_time    = prev->start_time;
@@ -402,8 +432,9 @@ restore_results(struct response *resp, struct saved_results *prev)
 		odfh->byte   += odfp->byte;
 		odfh->packet += odfp->packet;
 	}
-	
+
 	prev->start_time = 0;
+	return (need_output);
 }
 
 static void *
@@ -411,7 +442,6 @@ aggregator(void *thdata)
 {
 	int rval;
 	uint64_t my_epoch = 0;
-	time_t output_time = 0;
 	struct response *my_resp;
 	struct saved_results results, *prev;
 
@@ -421,36 +451,27 @@ aggregator(void *thdata)
 	prev->odfq.nrecord = 0;
 	
 	while (1) {
+		int need_output = 0;
+
 		if ((rval = pthread_mutex_lock(&resp_mutex[my_epoch & 1])) != 0)
 			err(1, "mutex_lock returned %d", rval);
 
 		my_resp = responses[my_epoch & 1];
 
-		if (query.output_interval != 0) {
+		if (query.output_interval != 0 && prev->start_time != 0)
 			/* 2-stage aggregation mode */
-			if (output_time == 0)
-				output_time = my_resp->start_time + 
-				    query.output_interval - 3;
-			if (prev->start_time != 0)
-				restore_results(my_resp, prev);
-		}
+			need_output = restore_results(my_resp, prev);
 		
 		if (hhh_run(my_resp) > 0) {
 			/* results have been produced */
-			if (query.output_interval != 0) {
-				/* 2-stage aggregation mode */
-				if (my_resp->end_time < output_time)
-					save_results(my_resp, prev);
-				else {
-					make_output(my_resp);
-					output_time += query.output_interval;
-				}
-			} else
+			if (query.output_interval != 0 && need_output == 0)
+				/* save results for 2-stage aggregation */
+				save_results(my_resp, prev);
+			else
 				make_output(my_resp);
 		}
 		odhash_resetall(my_resp);
-
-#if 1		
+#ifndef NDEBUG	/* for thread-safe odflow accounting */
 		if (debug) {
 			fprintf(stderr, "aggregator ");
 			odflow_stats();
@@ -496,8 +517,11 @@ check_flowtime(const struct aguri_flow *agf)
 
 	if (query.start_time == 0 && query.interval != 0) {
 		/* align the start time to the boundary */
-		query.start_time = (ts + query.interval - 1) /
-		    query.interval * query.interval;
+		int interval = query.interval;
+
+		if (query.output_interval > interval)
+			interval = query.output_interval;
+		query.start_time = (ts + interval - 1) / interval * interval;
 	}
 	if (query.start_time > ts)
 		return (0);
@@ -508,8 +532,9 @@ check_flowtime(const struct aguri_flow *agf)
 	}
 
 	if ((cur_resp->interval != 0 && ts >= ts_next) ||
-		cur_resp->ip_hash->nrecord  > max_hashentries ||
-		cur_resp->ip6_hash->nrecord > max_hashentries) {
+		(!disable_heuristics &&
+		(cur_resp->ip_hash->nrecord  > max_hashentries ||
+		cur_resp->ip6_hash->nrecord > max_hashentries))) {
 		/* done with the current interval (or the hash entries
 		 * exceed the threshold): aggregate and make a summary
 		 */
@@ -586,7 +611,8 @@ read_flow(FILE *fp)
 	while (1) {
 		if (fread(&agflow, sizeof(agflow), 1, fp) != 1) {
 			if (feof(fp)) {
-				fprintf(stderr, "\n read %lu flows\n", n);
+				if (debug)
+					fprintf(stderr, "\n read %lu flows\n", n);
 				return (0);
 			}
 			warn("fread failed!");

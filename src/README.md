@@ -124,7 +124,7 @@ be used for log-rotation.
 		[-c count] [-f pcap_filter] [-i interval[,output_interval]]
 		[-m byte|packet] [-p pid_file] [-r pcapfile] [-s pcap_snaplen]
 		[-t thresh_percenrage] [-w outputfile]
-		[-S starttime] [-E endtime]
+		[-P rtprio] [-S starttime] [-E endtime]
 
   + `-c count`:  
     Exit after processing count packets.
@@ -188,6 +188,10 @@ be used for log-rotation.
 
   + `-I interface`:  
     Listen on interface.
+
+  + `-P rtprio`:  
+    Set realtime priority (between 0 and 31, 0 is the highest).
+    (Currently FreeBSD only)
 
   + `-S starttime`:  
     Specify the starttime in Unix time.
