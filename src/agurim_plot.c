@@ -137,7 +137,7 @@ addupcounts(struct response *resp, struct odflow_hash *odfh)
 					/* add count to this entry */
 					if (query.criteria == BYTE)
 						cnt = odfp1->byte;
-					if (query.criteria == PACKET)
+					else
 						cnt = odfp1->packet;
 					cl_add(odfp0->odf_cache, time_slot, cnt);
 					break;

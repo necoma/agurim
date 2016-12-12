@@ -196,7 +196,7 @@ static int
 ip_parse(const char *p, int len)
 {
 	struct ip *ip;
-	int hlen, ip_len, proto, off;
+	int hlen, proto, off;
     
 	ip = (struct ip *)p;
 	if (len < sizeof(struct ip))
@@ -224,7 +224,6 @@ ip_parse(const char *p, int len)
 	aguri_flow.agflow_fs.fs_prot = ip->ip_p;
 
 	hlen = IP_HL(ip) * 4;
-	ip_len = min(ntohs(ip->ip_len), len);
 
 	p = (char *)ip + hlen;
 	len -= hlen;
@@ -303,7 +302,7 @@ static int
 ip6_parse(const char *p, int len)
 {
 	struct ip6_hdr *ip6;
-	int hlen, ip6_len, proto;
+	int hlen, proto;
 
 	ip6 = (struct ip6_hdr *)p;
 	if (len < sizeof(struct ip6_hdr))
@@ -332,7 +331,6 @@ ip6_parse(const char *p, int len)
 	memcpy(aguri_flow.agflow_fs.fs_dstaddr, &ip6->ip6_dst, sizeof(struct in6_addr));
 	aguri_flow.agflow_fs.fs_prot = (u_int8_t)proto;
 
-	ip6_len = min(ntohs(ip6->ip6_plen) + sizeof(struct ip6_hdr), len) - hlen;
 	p = (char *)ip6 + hlen;
 	len -= hlen;
 

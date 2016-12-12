@@ -42,6 +42,7 @@
 #include <err.h>
 #include <errno.h>
 #include <math.h>
+#define _XOPEN_SOURCE	/* for strptime in linux */
 #include <time.h>
 #include <unistd.h>
 
@@ -382,7 +383,7 @@ file_parse(char **files)
 static void
 read_file(FILE *fp)
 {
-	struct odflow *odfp;
+	struct odflow *odfp = NULL;
 	struct odflow_spec odfsp;
 	struct odflow_spec odpsp;
 	uint64_t byte, byte2;

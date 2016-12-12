@@ -123,8 +123,7 @@ sig_hup(int signal)
 
 int main(int argc, char **argv)
 {
-	int n, rval;
-	char **files;
+	int rval;
 	struct sigaction act;
 	pthread_t aggregator_thread;
 	pthread_attr_t attr;
@@ -147,9 +146,6 @@ int main(int argc, char **argv)
 	act.sa_handler = sig_hup;
 	sigaction(SIGHUP, &act, NULL);
 	
-	n = argc;
-	files = argv;
-
 	if (isatty(fileno(stdin))) {
 		if (pcapfile != NULL)
 			fprintf(stderr, "reading pcap data from %s...\n", 
@@ -262,7 +258,7 @@ option_parse(int argc, void *argv)
 			break;
 		case 'i':
 			query.interval = strtol(optarg, &cp, 10);
-			if (&cp != NULL && *cp == ',')
+			if (cp != NULL && *cp == ',')
 				query.output_interval = strtol(cp+1, NULL, 10);
 			else
 				query.output_interval = 0;
@@ -397,7 +393,7 @@ restore_results(struct response *resp, struct saved_results *prev)
 		prev->odfq.nrecord--;
 		if (odfp->af == AF_INET)
 			odfh = resp->ip_hash;
-		else if (odfp->af == AF_INET6)
+		else
 			odfh = resp->ip6_hash;
 
 		TAILQ_INSERT_TAIL(&odfh->tbl[0].odfq_head, odfp, odf_chain);
