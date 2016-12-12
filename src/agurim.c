@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2015 WIDE Project.
+ * Copyright (C) 2012-2016 WIDE Project.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -48,10 +48,11 @@
 #include "agurim.h"
 #include "aguri_flow.h"
 
+
 static void init(int argc, char **argv);
-static void finish();
-static void query_init();
-static void response_init();
+static void finish(void);
+static void query_init(void);
+static struct response *response_alloc(void);
 static void option_parse(int argc, void *argv);
 static int filter_parse(char *str);
 static void file_parse(char **files);
@@ -66,13 +67,16 @@ static char *proto_parse(char **strp, uint64_t byte, uint64_t packet,
     struct odflow_spec *odpsp, uint64_t *byte2, uint64_t *packet2);
 static int match_filter(struct odflow_spec *r);
 static int read_flow(FILE *fp);
+static struct response *response;
 
-struct _query query;
-struct _response response;
+struct query query;
 int plot_phase;
 int is_finish;
 int proto_view = 0;
 int verbose = 0;
+int debug = 0;
+FILE *wfp;
+
 static int flow_mode = 0;  /* read binary aguri_flow inputs from stdin */
 static char *filter_str = NULL;
 
@@ -80,19 +84,20 @@ static void
 usage()
 {
 	fprintf(stderr, "usage:\n");
-	fprintf(stderr, "  agurim2 [-dhpFP]\n");
-	fprintf(stderr, "          [-f '<src> <dst>' or '<proto>:<sport>:<dport>'\n");
-	fprintf(stderr, "          [-m criteria (byte/packet)]\n"); 
-	fprintf(stderr, "          [-n nflows] [-s duration] \n");
-	fprintf(stderr, "          [-t thresh_percentage]\n");
-	fprintf(stderr, "          [-S start_time] [-E end_time]\n");
-	fprintf(stderr, "          files or directories\n");
+	fprintf(stderr, "  agurim [-dhpFP]\n");
+	fprintf(stderr, "         [-f '<src> <dst>' or '<proto>:<sport>:<dport>'\n");
+	fprintf(stderr, "         [-i interval]\n"); 
+	fprintf(stderr, "         [-m criteria (byte/packet)]\n"); 
+	fprintf(stderr, "         [-n nflows] [-s duration] \n");
+	fprintf(stderr, "         [-t thresh_percentage] [-w outputfile]\n");
+	fprintf(stderr, "         [-S start_time] [-E end_time]\n");
+	fprintf(stderr, "         files or directories\n");
 	exit(1);
 }
 
 int main(int argc, char **argv)
 {
-	int n;
+	int i, n, nflows;
 	char **files;
 
 	init(argc, argv);
@@ -100,42 +105,52 @@ int main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
-again:
-	n = argc;
-	files = argv;
+	for (i = 0; i < 2; i++) {
+		n = argc;
+		files = argv;
 
-	if (n == 0) {
-		if (query.outfmt == REAGGREGATION) {
+		if (n == 0) {
+			if (query.outfmt != REAGGREGATION)
+				usage();
 			if (isatty(fileno(stdin)))
-				fprintf(stderr, "reading from stdin...\n");
+				fprintf(stderr, "reading %s data from stdin...\n",
+					flow_mode ? "binary": "aguri");
 			if (flow_mode)
 				read_flow(stdin); /* read binary aguri_flow */
 			else
 				read_file(stdin); /* read from stdin */
-		} else
-			usage();
-	}
-	while (n > 0) {
-		file_parse(files);
-		++files;
-		--n;
-	}
-
-	if (!plot_phase) {
-		hhh_run();
-		plot_init();
-		if (query.outfmt != REAGGREGATION) {
-			/* reset internal parameters for text processing */
-			is_finish = 0;
-			response.start_time = 0;
-
-			/* need to re-read the files for plotting */
-			/* set the second pass */
-			plot_phase = 1;
-			goto again;
+		} else {
+			while (n > 0) {
+				file_parse(files);
+				++files;
+				--n;
+			}
 		}
+
+		/*
+		 * all inputs are read and placed in the flow hash(es)
+		 */
+		if (plot_phase) {
+			/* add up remaining counts for the last interval */
+			plot_addupinterval(response);
+			break;
+		}
+
+		/* aggregate odflows in the hash(es) */
+		nflows = hhh_run(response);
+
+		if (query.outfmt == REAGGREGATION)
+			/* only one pass for reaggregation */
+			break;
+
+		/* for plotting, need to re-read the files in the 2nd pass */
+		odhash_resetall(response);
+		plot_prepare(response);
+		is_finish = 0;
+		response->start_time = 0;
+		plot_phase = 1;
 	}
-	plot_showdata();
+	make_output(response);
 
 	finish();
 
@@ -147,23 +162,22 @@ init(int argc, char **argv)
 {
 	option_parse(argc, argv);
 	query_init();
-	response_init();
-	odhash_init();
+	response = response_alloc();
 }
 
 static void
-finish()
+finish(void)
 {
-	plot_finish();
+	if (wfp != stdout)
+		if (fclose(wfp) != 0)
+			err(1, "fclose failed");
 }
 
 static void
-query_init()
+query_init(void)
 {
 	if (!query.criteria)
 		query.criteria = COMBINATION;
-	if (!query.interval) 
-		query.interval = 60;
 	if (!query.outfmt) 
 		query.outfmt = REAGGREGATION;
 	if (!query.threshold) {
@@ -172,10 +186,10 @@ query_init()
 		else
 			query.threshold = 3; /* 3% otherwise */
 	}
-	if (!query.nflows && query.outfmt != REAGGREGATION)
-		query.nflows = 7;
 	if (query.outfmt == REAGGREGATION)
 		return;
+	if (!query.nflows)
+		query.nflows = 7;
 	if (!query.start_time && !query.end_time && !query.duration)
 		query.duration = 60*60*24;
 	else {
@@ -190,24 +204,30 @@ query_init()
 	}
 }
 
-static void
-response_init()
+static struct response *
+response_alloc(void)
 {
-	response.criteria = COMBINATION;
-	response.interval = query.interval;
-	response.threshold = query.threshold;
-	response.nflows = 0;
-	response.duration = query.duration;
-	TAILQ_INIT(&response.odfq.odfq_head);
-	response.odfq.nrecord = 0;
+	struct response *resp;
+
+	if ((resp = calloc(1, sizeof(struct response))) == NULL)
+		err(1, "calloc failed!");
+	resp->interval = query.interval;
+	resp->threshold = query.threshold;
+	resp->nflows = 0;
+	resp->duration = query.duration;
+	TAILQ_INIT(&resp->odfq.odfq_head);
+	resp->odfq.nrecord = 0;
+	odhash_init(resp);
+	return (resp);
 }
 
 static void
 option_parse(int argc, void *argv)
 {
 	int ch;
+	const char *wfile = NULL;
 
-	while ((ch = getopt(argc, argv, "df:hi:m:n:ps:t:vDE:FPS:")) != -1) {
+	while ((ch = getopt(argc, argv, "df:hi:m:n:ps:t:vw:DE:FPS:")) != -1) {
 		switch (ch) {
 		case 'd':	/* Set the output format = txt */
 			query.outfmt = DEBUG;
@@ -231,8 +251,6 @@ option_parse(int argc, void *argv)
 				usage();
 			break;
 		case 'n':
-			if (optarg[0] == '-')
-				usage();
 			query.nflows = strtol(optarg, NULL, 10);
 			break;
 		case 'p':	/* Set the output format = json */
@@ -243,24 +261,21 @@ option_parse(int argc, void *argv)
 			}
 			break;
 		case 's':
-			if (optarg[0] == '-')
-				usage();
 			query.duration = strtol(optarg, NULL, 10);
 			break;
 		case 't':
-			if (optarg[0] == '-')
-				usage();
 			query.threshold = strtod(optarg, NULL);
 			break;
 		case 'v':
 			verbose++;
 			break;
+		case 'w':
+			wfile = optarg;
+			break;
 		case 'D':
 			disable_heuristics++;  /* disable label heuristics */
 			break;
 		case 'E':
-			if (optarg[0] == '-')
-				usage();
 			query.end_time = strtol(optarg, NULL, 10);
 			break;
 		case 'F':
@@ -270,8 +285,6 @@ option_parse(int argc, void *argv)
 			proto_view = 1;
 			break;
 		case 'S':
-			if (optarg[0] == '-')
-				usage();
 			query.start_time = strtol(optarg, NULL, 10);
 			break;
 		default:
@@ -279,6 +292,11 @@ option_parse(int argc, void *argv)
 			break;
 		}
 	}
+
+	if (wfile == NULL || !strcmp(wfile, "-"))
+		wfp = stdout;
+	else if ((wfp = fopen(wfile, "w")) == NULL)
+		err(1, "can't open %s", wfile);
 
 	if (filter_str != NULL && filter_parse(filter_str) < 0)
 		usage();
@@ -383,7 +401,7 @@ read_file(FILE *fp)
 		if (is_finish)	/* the duration is expired */
 			break;
 		/* skip until the specified start_time */
-		if (response.start_time == 0)
+		if (response->start_time == 0)
 			continue;
 		if (buf[0] != '[')  /* address line starts with "[rank]" */
 			continue;
@@ -403,7 +421,7 @@ read_file(FILE *fp)
 
 		/* insert a record into a hash table */
 		if (proto_view == 0)
-			odfp = odflow_addcount(&odfsp, af, byte, packet);
+			odfp = odflow_addcount(&odfsp, af, byte, packet, response);
 
 		/* add decomposition of the origin and destination flow */
 		if (fgets(buf, bufsz, fp) == NULL)
@@ -424,7 +442,7 @@ read_file(FILE *fp)
 			if (proto_view == 0) {
 				odproto_addcount(odfp, &odpsp, AF_LOCAL, byte2, packet2);
 			} else {
-				odfp = odflow_addcount(&odpsp, AF_LOCAL, byte2, packet2);
+				odfp = odflow_addcount(&odpsp, AF_LOCAL, byte2, packet2, response);
 				if (!plot_phase)
 					odproto_addcount(odfp, &odfsp, af, byte2, packet2);
 				byte -= byte2;
@@ -434,7 +452,7 @@ read_file(FILE *fp)
 		if (proto_view != 0 && query.f_af == 0
 			&& (byte > 0 || packet > 0)) {
 			/* add remaining counts to the wildcard proto */
-			odfp = odflow_addcount(&zero, AF_LOCAL, byte, packet);
+			odfp = odflow_addcount(&zero, AF_LOCAL, byte, packet, response);
 			if (!plot_phase)
 				odproto_addcount(odfp, &odfsp, af, byte, packet);
 		}
@@ -470,56 +488,39 @@ is_preambles(char *buf)
 
 		if (query.start_time > t)
 			return (1);
-		if (response.start_time == 0)
-			response.start_time = t;
+		if (response->start_time == 0)
+			response->start_time = t;
 		if (!plot_phase)
-			response.current_time = t;
-		if (query.outfmt == REAGGREGATION &&
-		    t - response.start_time >= response.interval) {
-			hhh_run();
-			plot_showdata();
-			plot_finish();
-			odhash_reset(ip_hash);
-			odhash_reset(ip6_hash);
-			if (proto_view)
-				odhash_reset(proto_hash);
-			response.start_time = t;
+			response->current_time = t;
+		if (query.outfmt == REAGGREGATION && response->interval != 0 &&
+		    t - response->start_time >= response->interval) {
+			if (hhh_run(response) > 0)
+				make_output(response);
+			odhash_resetall(response);
+			response->start_time = t;
 		}
-		if (plot_phase && query.outfmt != REAGGREGATION &&
-		    t - plot_timestamps[time_slot] >= response.interval) {
-			plot_addslot();
-			if (proto_view == 0) {
-				plot_addcount(ip_hash);
-				plot_addcount(ip6_hash);
-			} else
-				plot_addcount(proto_hash);
+		if (plot_phase) {
+			time_t slottime = plot_getslottime();
+			if (t - slottime >= response->interval) {
+				plot_addupinterval(response);
 
-			/* check empty period */
-			if (t - plot_timestamps[time_slot] >= response.interval * 2) {
-				/* there exists a blank interval,
-				 * insert blank timeslots
+				/* check empty period. if there exists
+				 * a blank interval, insert blank timeslots
 				 */
-				time_t t2;
-
-				plot_addslot();
-				t2 = plot_timestamps[time_slot] + response.interval; 
-				plot_timestamps[++time_slot] = t2;
-				if (t - t2 > response.interval) {
-					plot_addslot();
-					t2 = t - response.interval; 
-					plot_timestamps[++time_slot] = t2;
-				}
+				if (t - slottime >= response->interval * 2)
+					plot_addslot(slottime + response->interval, 1);
+				if (t - slottime >= response->interval * 3)
+					plot_addslot(t - response->interval, 1);
+				/* for next interval */
+				plot_addslot(t, 0);
+				odhash_resetall(response);
 			}
-
-			plot_timestamps[++time_slot] = t;
-			odhash_reset(ip_hash);
-			odhash_reset(ip6_hash);
-			if (proto_view)
-				odhash_reset(proto_hash);
 		}
 		return (1);
 	}   
 	if (!strncmp("EndTime:", &buf[2], 8)) {
+		if (!response->start_time)
+			return (1);
 		cp = strchr(&buf[2], ':');
 		cp++;
 		cp += strspn(cp, " \t");
@@ -528,27 +529,20 @@ is_preambles(char *buf)
 			return (-1);
 		if ((t = mktime(&tm)) < 0)
 			warnx("mktime failed.");
-		if (!response.start_time)
-			return (1);
 		if (query.end_time && query.end_time < t) {
 			is_finish = 1;
 			return (1);
 		}
 		if (!plot_phase) {
-			response.end_time = t;
-
-			response.max_interval = max(response.max_interval,
-			    t - response.current_time);
-
-			if (t - response.start_time > query.duration)
+			response->end_time = t;
+			response->max_interval = max(response->max_interval,
+			    t - response->current_time);
+			if (t - response->start_time > query.duration)
 				return (1);
 		}
-		if (plot_phase) {
-			/* int duration = t - plot_timestamps[time_slot]; */
-			if (t > response.end_time) {
-				is_finish = 1;
-				return (1);
-			}
+		if (plot_phase && t > response->end_time) {
+			is_finish = 1;
+			return (1);
 		}
 		return (1);
 	}
@@ -791,14 +785,11 @@ match_filter(struct odflow_spec *odfsp)
  * skip, and -1 to finish.
  * XXX works only for REAGGREGATION at the moment.
  */
-static int
+int
 check_flowtime(const struct aguri_flow *agf)
 {
-	static time_t ts_max;
+	static time_t ts_next, ts_max;
 	time_t ts;
-
-	if (query.outfmt != REAGGREGATION)
-		errx(1, "flow mode is only for reaggregation!");
 
 	ts = (time_t)ntohl(agf->agflow_last);
 	if (ts < ts_max)
@@ -808,33 +799,31 @@ check_flowtime(const struct aguri_flow *agf)
 
 	if (query.start_time > ts)
 		return (0);
-	if (response.start_time == 0)
-		response.start_time = ts;
+	if (response->start_time == 0) {
+		response->start_time = ts;
+		if (response->interval != 0)
+			ts_next = query.start_time + query.interval;
+	}
 
-	response.current_time = ts;
-	if (ts - response.start_time >= response.interval) {
-		hhh_run();
-		plot_showdata();
-		plot_finish();
-		odhash_reset(ip_hash);
-		odhash_reset(ip6_hash);
-		response.start_time = ts;
+	if (response->interval != 0 && ts >= ts_next) {
+		if (hhh_run(response) > 0)
+			make_output(response);
+		odhash_resetall(response);
+		response->start_time = ts;
+		ts_next += response->interval;
 	}
 	if (query.end_time && query.end_time < ts)
 		return (-1);  /* we are beyond the end time */
-	if (query.duration && ts - response.start_time > query.duration)
+	if (query.duration && ts - response->start_time > query.duration)
 		return (-1);  /* ditto */
 
-	response.end_time = ts;
-
-	response.max_interval = max(response.max_interval,
-		    ts - response.current_time);
+	response->end_time = ts;
 	
 	return (1);  /* process this flow record */
 }
 
 /* convert an aguri_flow record into address/port odflows */
-static int
+int
 do_agflow(const struct aguri_flow *agf)
 {
 	struct odflow *odfp;
@@ -862,7 +851,7 @@ do_agflow(const struct aguri_flow *agf)
 	memcpy(&odfsp.dst, agf->agflow_fs.fs_dstaddr, len / 8);
 	odfsp.srclen = len;
 	odfsp.dstlen = len;
-	odfp = odflow_addcount(&odfsp, af, byte, packet);
+	odfp = odflow_addcount(&odfsp, af, byte, packet, response);
 
 	odpsp.src[0] = agf->agflow_fs.fs_prot;
 	odpsp.dst[0] = agf->agflow_fs.fs_prot;
@@ -882,7 +871,6 @@ read_flow(FILE *fp)
 	int rval;
 	unsigned long n = 0;
 
-	fprintf(stderr, "agurim: reading flow info from stdin...\n");
 	while (1) {
 		if (fread(&agflow, sizeof(agflow), 1, fp) != 1) {
 			if (feof(fp)) {

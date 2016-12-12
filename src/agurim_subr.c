@@ -41,102 +41,6 @@
 static uint8_t prefixmask[8]
     = { 0x00, 0x80, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc, 0xfe };
 
-/* helper for qsort: compare the sum of prefix length */
-int
-area_comp(const void *p0, const void *p1)
-{
-	struct odflow *e0, *e1;
-	uint16_t len0, len1;
-
-	e0 = *(struct odflow **)p0;
-	e1 = *(struct odflow **)p1;
-
-	len0 = e0->s.srclen + e0->s.dstlen;
-	len1 = e1->s.srclen + e1->s.dstlen;
-
-	if (len0 < len1)
-		return (1);
-	if (len0 > len1)
-		return (-1);
-	return (0);
-}
-
-/* select the larger one by fraction */
-double
-countfrac_select(struct odflow *odfp)
-{
-	double fv, fv2;
-
-	fv = odfp->byte * 100 / response.total_byte;
-	fv2 = odfp->packet * 100 / response.total_packet;
-	return max(fv, fv2);
-}
-
-/* helper for qsort: compare the counters by the given criteria */
-int
-count_comp(const void *p0, const void *p1)
-{
-	struct odflow *odfp0, *odfp1;
-
-	odfp0 = *(struct odflow **)p0;
-	odfp1 = *(struct odflow **)p1;
-
-	switch (query.criteria) {
-	case BYTE:
-		if (odfp0->byte < odfp1->byte)
-			return (-1);
-		else if (odfp0->byte > odfp1->byte)
-			return (1);
-		break;
-	case PACKET:
-		if (odfp0->packet < odfp1->packet)
-			return (-1);
-		else if (odfp0->packet > odfp1->packet)
-			return (1);
-		break;
-	case COMBINATION:
-	{
-		double f0, f1;
-
-		f0 = countfrac_select(odfp0);
-		f1 = countfrac_select(odfp1);
-		if (f0 < f1)
-			return (-1);
-		else if (f0 > f1)
-			return (1);
-		break;
-	}
-	}
-	return (0);
-}
-
-/* helper for qsort: simpler one for protocols */
-int
-count_comp2(const void *p0, const void *p1)
-{
-	struct odflow *odpp0, *odpp1;
-
-	odpp0 = *(struct odflow **)p0;
-	odpp1 = *(struct odflow **)p1;
-
-	switch (query.criteria) {
-	case BYTE:
-	case COMBINATION:
-		if (odpp0->byte < odpp1->byte)
-			return (-1);
-		else if (odpp0->byte > odpp1->byte)
-			return (1);
-		break;
-	case PACKET:
-		if (odpp0->packet < odpp1->packet)
-			return (-1);
-		else if (odpp0->packet > odpp1->packet)
-			return (1);
-		break;
-	}
-	return (0);
-}
-
 /* compare prefixes for the given length */
 int
 prefix_comp(uint8_t *r, uint8_t *r2, uint8_t len)
@@ -190,13 +94,13 @@ ip_print(uint8_t *ip, uint8_t len)
 	char buf[BUFSIZ];
 
 	if (len == 0)
-		printf("*");
+		fprintf(wfp, "*");
 	else {
 		inet_ntop(AF_INET, ip, buf, BUFSIZ);
 		if (len < 32)
-			printf("%s/%u", buf, len);
+			fprintf(wfp, "%s/%u", buf, len);
 		else
-			printf("%s", buf);
+			fprintf(wfp, "%s", buf);
 	}
 }
 
@@ -206,13 +110,13 @@ ip6_print(uint8_t *ip6, uint8_t len)
 	char buf[BUFSIZ];
 
 	if (len == 0)
-		printf("*::");
+		fprintf(wfp, "*::");
 	else {
 		inet_ntop(AF_INET6, ip6, buf, BUFSIZ);
 	if (len < 128)
-		printf("%s/%u", buf, len);
+		fprintf(wfp, "%s/%u", buf, len);
 	else
-		printf("%s", buf);
+		fprintf(wfp, "%s", buf);
 	}
 }
 
@@ -221,12 +125,12 @@ odflow_print(struct odflow *odfp)
 {
 	if (odfp->af == AF_INET) {
 		ip_print(odfp->s.src, odfp->s.srclen);
-		printf(" ");
+		fprintf(wfp, " ");
 		ip_print(odfp->s.dst, odfp->s.dstlen);
 	} 
 	if (odfp->af == AF_INET6) {
 		ip6_print(odfp->s.src, odfp->s.srclen);
-		printf(" ");
+		fprintf(wfp, " ");
 		ip6_print(odfp->s.dst, odfp->s.dstlen);
 	}
 	if (odfp->af == AF_LOCAL) {
@@ -240,29 +144,29 @@ odproto_print(struct odflow *odpp)
 	int port;
 
 	if (odpp->s.src[0] == 0)
-		printf("*:");
+		fprintf(wfp, "*:");
 	else
-		printf("%d:", odpp->s.src[0]);
+		fprintf(wfp, "%d:", odpp->s.src[0]);
 	port = (odpp->s.src[1] << 8) + odpp->s.src[2];
 	if (port != 0) {
-		printf("%d", port);
+		fprintf(wfp, "%d", port);
 		if (odpp->s.srclen < 24) {  /* port range */
 			int end = port + (1 << (24 - odpp->s.srclen)) - 1;
-			printf("-%d", end);
+			fprintf(wfp, "-%d", end);
 		}
 	} else
-		printf("*");
-	printf(":");
+		fprintf(wfp, "*");
+	fprintf(wfp, ":");
 
 	port = (odpp->s.dst[1] << 8) + odpp->s.dst[2];
 	if (port != 0)  {
-		printf("%d", port);
+		fprintf(wfp, "%d", port);
 		if (odpp->s.dstlen < 24) {  /* port range */
 			int end = port + (1 << (24 - odpp->s.dstlen)) - 1;
-			printf("-%d", end);
+			fprintf(wfp, "-%d", end);
 		}
 	} else
-		printf("*");
+		fprintf(wfp, "*");
 }
 
 /*

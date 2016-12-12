@@ -54,16 +54,15 @@ struct hhh_params {
 	int	minsize;    /* granularity */
 	int	prefixlen;  /* prefix length: 32 for IPv4 addres */
 	int	cutoff;	    /* apply coarser granularity when prefixlen is 
-			     shorter than this value */
+			       shorter than this value */
 	int	cutoffres;  /* resolution for cutoff region */
+	struct response *resp;  /* response */
 	struct odf_tailq *odfqp;/* queue for placing extracted odflows */
 };
 
 inline static int label_check(struct odflow_spec *odfsp, int label[]);
 inline static int thresh_check(struct odflow *odfp, 
 				uint64_t thresh, uint64_t thresh2);
-static struct odflow_spec odflowspec_gen(struct odflow_spec *odfsp, 
-				int label[], int bytesize);
 static int odflow_aggregate(struct odflow_hash *odfh, struct odflow *parent,
 		int label[], struct hhh_params *params);
 static int odflow_extract(struct odflow_hash *odfh, struct odflow *parent,
@@ -71,7 +70,8 @@ static int odflow_extract(struct odflow_hash *odfh, struct odflow *parent,
 static int lattice_search(struct odflow *parent, int pl0, int pl1, int size,
 			int pos, struct hhh_params *params);
 static int find_hhh(struct odflow_hash *hash, int bitlen,
-		uint64_t thresh, uint64_t thresh2, struct odf_tailq *odfqp);
+		uint64_t thresh, uint64_t thresh2,
+		struct response *resp, struct odf_tailq *odfqp);
 
 static struct odflow_hash *dummy_hash;  /* used in lattice_search for
 					 * dummy iteration */
@@ -118,7 +118,7 @@ thresh_check(struct odflow *odfp, uint64_t thresh, uint64_t thresh2)
 /*
  * create new odflow record based on the flowspec and the label
  */
-static struct odflow_spec
+struct odflow_spec
 odflowspec_gen(struct odflow_spec *odfsp, int label[], int bytesize)
 {
 	struct odflow_spec _odfsp; 
@@ -303,8 +303,8 @@ lattice_search(struct odflow *parent, int pl0, int pl1, int size, int pos,
 			pl0, pl1, size, pos, do_aggregate, do_recurse);
 		odflow_print(parent);
 		printf(": %" PRIu64 " (%.2f%%)\t%" PRIu64 " (%.2f%%)\n",
-			parent->byte, (double)parent->byte / response.total_byte * 100,
-			parent->packet, (double)parent->packet / response.total_packet * 100);
+			parent->byte, (double)parent->byte / params->resp->total_byte * 100,
+			parent->packet, (double)parent->packet / params->resp->total_packet * 100);
 	}
 #endif	
 	if (do_aggregate) {
@@ -416,12 +416,21 @@ lattice_search(struct odflow *parent, int pl0, int pl1, int size, int pos,
 
 static int
 find_hhh(struct odflow_hash *hash, int bitlen, uint64_t thresh, uint64_t thresh2,
-	struct odf_tailq *odfqp)
+	struct response *resp, struct odf_tailq *odfqp)
 {
 	struct odflow *root, *odfp, *next;
 	struct odflow_spec spec;
 	struct hhh_params params;
 	int i, n, nrecord, nflows = 0;
+
+	/* sanity check */
+	if (hash != NULL) { /* for main attribute */
+		if (hash->nrecord == 0)
+			return (0);
+	} else { /* for sub-attribute */
+		if (TAILQ_EMPTY(&odfqp->odfq_head))
+			return (0);
+	}
 
 	/* create a dummy top node */
 	memset(&spec, 0, sizeof(spec));
@@ -435,6 +444,7 @@ find_hhh(struct odflow_hash *hash, int bitlen, uint64_t thresh, uint64_t thresh2
 	params.prefixlen = bitlen;
 	params.cutoff = 0;	/* no cutoff */
 	params.cutoffres = 1;
+	params.resp = resp;
 	params.odfqp = odfqp;
 
 	switch (bitlen) {
@@ -564,15 +574,20 @@ find_hhh(struct odflow_hash *hash, int bitlen, uint64_t thresh, uint64_t thresh2
 	}
 	
 	free(params.flow_list);
+	odflow_free(root);
 	return nflows;
 }
 
-/* run the HHH algorithm on the inputs */
-void hhh_run()
+/* 
+ * run the HHH algorithm on the inputs.
+ * aggregate odflows in the hash(es), and place the resulted odflows
+ * into the odfq in the response.
+ */
+int
+hhh_run(struct response *resp)
 {
 	struct odflow *odfp;
-	int nflows;
-	uint64_t thresh, thresh2;
+	int nflows = 0;
 
 	/* create a dummy hash containing one dummy entry */
 	if (dummy_hash == NULL) {
@@ -587,48 +602,55 @@ void hhh_run()
 	
 	if (proto_view == 0) {
 		/* calculate total bytes/packets and thresholds */
-		response.total_byte = ip_hash->byte + ip6_hash->byte;
-		response.thresh_byte = response.total_byte * query.threshold / 100;
-		response.total_packet = ip_hash->packet + ip6_hash->packet;
-		response.thresh_packet = response.total_packet * query.threshold / 100;
-
+		resp->total_byte = resp->ip_hash->byte + resp->ip6_hash->byte;
+		if (resp->total_byte == 0)
+			return (0);  /* nothing to aggregate */
+		resp->thresh_byte =
+		    (resp->total_byte * query.threshold + 99) / 100;
+		resp->total_packet = resp->ip_hash->packet + resp->ip6_hash->packet;
+		resp->thresh_packet =
+		    (resp->total_packet * query.threshold + 99) / 100;
+		resp->input_odflows  = resp->ip_hash->nrecord;
+		resp->input_odflows6 = resp->ip6_hash->nrecord;
+		
 		/* for IPv4, aggregate 32 bits */
-		response.nflows = find_hhh(ip_hash, 32, response.thresh_byte,
-				    response.thresh_packet, &response.odfq);
+		resp->nflows = find_hhh(resp->ip_hash, 32, resp->thresh_byte, 
+					resp->thresh_packet, resp, &resp->odfq);
 		/* for IPv6, aggregate 128 bits */
-		response.nflows += find_hhh(ip6_hash, 128, response.thresh_byte,
-				    response.thresh_packet, &response.odfq);
+		resp->nflows += find_hhh(resp->ip6_hash, 128, resp->thresh_byte,
+					resp->thresh_packet, resp, &resp->odfq);
 	} else {
 		/* calculate total bytes/packets and thresholds */
-		response.total_byte = proto_hash->byte;
-		response.thresh_byte = response.total_byte * query.threshold / 100;
-		response.total_packet = proto_hash->packet;
-		response.thresh_packet = response.total_packet * query.threshold / 100;
+		resp->total_byte = resp->proto_hash->byte;
+		if (resp->total_byte == 0)
+			return (0);  /* nothing to aggregate */
+		resp->thresh_byte =
+		    (resp->total_byte * query.threshold + 99) / 100;
+		resp->total_packet = resp->proto_hash->packet;
+		resp->thresh_packet =
+		    (resp->total_packet * query.threshold + 99) / 100;
 
-		response.nflows = find_hhh(proto_hash, 24, response.thresh_byte,
-				    response.thresh_packet, &response.odfq);
+		resp->nflows = find_hhh(resp->proto_hash, 24, resp->thresh_byte,
+				    resp->thresh_packet, resp, &resp->odfq);
 	}
 
 	/* if # of entries is specified, further reduce the list */
-	if (query.nflows != 0 && query.nflows < response.nflows) {
+	if (query.nflows != 0 && query.nflows < resp->nflows) {
 		/* get ranking */
-		odfq_countsort(&response.odfq);
-		odfq_listreduce(&response.odfq, query.nflows);
+		odfq_countsort(&resp->odfq, resp->total_byte, resp->total_packet);
+		odfq_listreduce(&resp->odfq, query.nflows);
 		/* update the total flows in the response */
-		response.nflows = query.nflows;
-#if 1
-		/* XXX we can replace nflows by nrecord */
-		assert(response.nflows == response.odfq.nrecord);
-#endif		
+		resp->nflows = resp->odfq.nrecord;
 		/* restore the area order */
-		odfq_areasort(&response.odfq);
+		odfq_areasort(&resp->odfq);
 	}
 
 	/* aggregate protocols */
-        TAILQ_FOREACH(odfp, &response.odfq.odfq_head, odf_chain) {
+        TAILQ_FOREACH(odfp, &resp->odfq.odfq_head, odf_chain) {
 		/* calculate threshold */
-		thresh  = odfp->byte   * query.threshold / 100;
-		thresh2 = odfp->packet * query.threshold / 100;
+		uint64_t thresh, thresh2;
+		thresh  = (odfp->byte   * query.threshold + 99) / 100;
+		thresh2 = (odfp->packet * query.threshold + 99) / 100;
 		if (disable_heuristics < 2) {
 			/* increase the threshold for sub-attributes */
 			thresh *= 4;
@@ -636,25 +658,29 @@ void hhh_run()
 		}
 		if (proto_view == 0) {
 			nflows = find_hhh(NULL, 24, thresh, thresh2,
-					&odfp->odf_odpq);
+						resp, &odfp->odf_odpq);
 		} else {
 			nflows = find_hhh(NULL, 32, thresh, thresh2,
-					&odfp->odf_odpq);
-			nflows = find_hhh(NULL, 128, thresh, thresh2,
-					&odfp->odf_odpq);
+						resp, &odfp->odf_odpq);
+			nflows += find_hhh(NULL, 128, thresh, thresh2,
+						resp, &odfp->odf_odpq);
 		}
 
 		if (query.nflows != 0 && query.nflows < nflows) {
 			/* get ranking */
-			odfq_countsort(&odfp->odf_odpq);
+			odfq_countsort(&odfp->odf_odpq, odfp->byte, odfp->packet);
 			odfq_listreduce(&odfp->odf_odpq, query.nflows);
 			/* restore the area order */
 			odfq_areasort(&odfp->odf_odpq);
 		}
 	}
 
+#if 1 /* not really needed but to make odflow_stats clean */
 	if (dummy_hash != NULL) {
 		odhash_free(dummy_hash);
 		dummy_hash = NULL;
 	}
+#endif
+
+	return (resp->nflows);
 }

@@ -36,14 +36,22 @@
 #include <string.h>
 #include <err.h>
 #include <assert.h>
+#ifndef NDEBUG	/* for thread-safe odflow accounting */
+#include <pthread.h>
+#endif
 
 #include "agurim.h"
 
-struct odflow_hash *ip_hash;
-struct odflow_hash *ip6_hash;
-struct odflow_hash *proto_hash;
-
 static struct odflow *odproto_lookup(struct odflow *odfp, struct odflow_spec *odpsp, int af);
+static struct odflow *odproto_quickmerge(struct odf_tailq *odfq, struct odflow_spec *odpsp);
+
+#ifndef NDEBUG	/* for thread-safe odflow accounting */
+static long odflows_allocated = 0;
+static long max_odflows_allocated = 0;
+static pthread_mutex_t odflow_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
+#define ODPQ_MAXENTRIES	1000  /* threshold to merge a protocol list */
 
 /*
  * The following hash function is adapted from "Hash Functions" by Bob Jenkins
@@ -88,12 +96,12 @@ slot_fetch(uint8_t *v1, uint8_t *v2, int n)
 }
 
 void
-odhash_init()
+odhash_init(struct response *resp)
 {
-	ip_hash = odhash_alloc(1024);
-	ip6_hash = odhash_alloc(1024);
+	resp->ip_hash = odhash_alloc(1024);
+	resp->ip6_hash = odhash_alloc(1024);
 	if (proto_view)
-		proto_hash = odhash_alloc(512);
+		resp->proto_hash = odhash_alloc(512);
 }
 
 /*
@@ -141,6 +149,17 @@ odhash_free(struct odflow_hash *odfh)
 	free(odfh);
 }
 
+void
+odhash_resetall(struct response *resp)
+{
+	/* reset hashes */
+	odhash_reset(resp->ip_hash);
+	odhash_reset(resp->ip6_hash);
+	if (proto_view)
+		odhash_reset(resp->proto_hash);
+}
+
+
 /* odhash_reset re-initialize the given odhash */
 void
 odhash_reset(struct odflow_hash *odfh)
@@ -165,18 +184,18 @@ odhash_reset(struct odflow_hash *odfh)
 /* add counts to upper odflow */
 struct odflow *
 odflow_addcount(struct odflow_spec *odfsp, int af,
-    uint64_t byte, uint64_t packet)
+    uint64_t byte, uint64_t packet, struct response *resp)
 {
 	struct odflow_hash *odfh = NULL;
 	struct odflow *odfp;
 
 	/* fetch a pointer to the corresponding odflow_hash */
 	if (af == AF_INET)
-		odfh = ip_hash;
+		odfh = resp->ip_hash;
 	else if  (af == AF_INET6)
-		odfh = ip6_hash;
+		odfh = resp->ip6_hash;
 	else
-		odfh = proto_hash;
+		odfh = resp->proto_hash;
 
 	assert(odfh != NULL);
 
@@ -219,7 +238,12 @@ odflow_alloc(struct odflow_spec *odfsp)
 	memcpy(&(odfp->s), odfsp, sizeof(struct odflow_spec));
 
 	odfp->odf_cache = cl_alloc();
-
+#ifndef NDEBUG	/* for thread-safe odflow accounting */
+	pthread_mutex_lock(&odflow_mutex);
+	if (++odflows_allocated > max_odflows_allocated)
+		max_odflows_allocated = odflows_allocated;
+	pthread_mutex_unlock(&odflow_mutex);
+#endif
 	return (odfp);
 }
 
@@ -234,6 +258,11 @@ odflow_free(struct odflow *odfp)
 		odfp->odf_odpq.nrecord--;
 		odflow_free(odpp);
 	}
+#ifndef NDEBUG	/* for thread-safe odflow accounting */
+	pthread_mutex_lock(&odflow_mutex);
+	odflows_allocated--;
+	pthread_mutex_unlock(&odflow_mutex);
+#endif
 	free(odfp);
 }
 
@@ -275,9 +304,22 @@ odproto_lookup(struct odflow *odfp, struct odflow_spec *odpsp, int af)
 	struct odflow *odpp;
 
 	TAILQ_FOREACH(odpp, &(odfp->odf_odpq.odfq_head), odf_chain) {
-		if (odpp->af == af &&
-		    memcmp(&odpp->s, odpsp, sizeof(struct odflow_spec)) == 0)
-			break;
+		if (odpp->af == af) {
+			if (odpp->s.srclen == odpsp->srclen &&
+				odpp->s.dstlen == odpsp->dstlen) {
+				if (memcmp(&odpp->s, odpsp, sizeof(struct odflow_spec)) == 0)
+					break;
+			} else {
+				/* is this a superset? (after quickmerege) */
+				if (odflowspec_is_overlapped(&odpp->s, odpsp))
+					break;
+			}
+		}
+	}
+
+	if (odpp == NULL && odfp->odf_odpq.nrecord >= ODPQ_MAXENTRIES) {
+		/* protection against port scans: */
+		odpp = odproto_quickmerge(&odfp->odf_odpq, odpsp);
 	}
 
 	/* if this record is not in the table, create new entry */
@@ -289,4 +331,104 @@ odproto_lookup(struct odflow *odfp, struct odflow_spec *odpsp, int af)
 	}
 
 	return (odpp);
+}
+
+/*
+ * protection against port scan (for aguri3 mode)
+ * when the list of protocols becomes too long, add a wildcard.
+ * the wildcard is selected 
+ *  wildcard[0]: proto:sport:*
+ *  wildcard[1]: proto:*:dport
+ *  wildcard[2]: proto:*:*
+ * then, merge the existing entries into this wildcard.
+ */
+static struct odflow *
+odproto_quickmerge(struct odf_tailq *odfq, struct odflow_spec *odpsp)
+{
+	struct odflow *odpp, *wildcard[3], **candidates[3];
+	int i, n, idx, nrecord;
+
+
+	/* create 3 wildcard entries */
+	nrecord = odfq->nrecord;
+	for (i = 0; i < 3; i++) {
+		struct odflow_spec odf_spec;
+		int label[2];
+
+		/* create a wildcard labels */
+		label[0] = label[1] = 8;
+		if (i < 2)
+			label[i] += 16; /* sport or dport */
+		odf_spec = odflowspec_gen(odpsp, label, 24/8);
+
+		wildcard[i] = odflow_alloc(&odf_spec);
+		wildcard[i]->af = AF_LOCAL;
+		if ((candidates[i] = calloc(nrecord, sizeof(odpp))) == NULL)
+			err(1, "odproto_quickmerge: calloc failed!");
+	}
+
+	/* first, go through the list to select one of the wildcards */
+	n = 0;
+	TAILQ_FOREACH(odpp, &odfq->odfq_head, odf_chain) {
+		for (i = 0; i < 3; i++)
+			if (odflowspec_is_overlapped(&wildcard[i]->s, &odpp->s)) {
+				wildcard[i]->byte   += odpp->byte;
+				wildcard[i]->packet += odpp->packet;
+				candidates[i][n] = odpp;
+			}
+		n++;
+	}
+	assert(n == nrecord);
+	
+	/* select the best wildcard */
+	idx = 0;
+	if (wildcard[0]->packet < wildcard[1]->packet)
+		idx = 1;
+	if (wildcard[idx]->packet < wildcard[2]->packet / 2)
+		idx = 2;  /* use proto:*:* if either port is not a majority */
+
+	/* remove the merged entries */
+	n = 0;
+	for (i = 0; i < nrecord; i++) {
+		odpp = candidates[idx][i];
+		if (odpp != NULL) {
+			TAILQ_REMOVE(&odfq->odfq_head, odpp, odf_chain);
+			odfq->nrecord--;
+			odflow_free(odpp);
+			n++;
+		}
+	}
+
+	/* add the wildcard to the list (in the reverse order of prefixlens) */
+	if (TAILQ_EMPTY(&odfq->odfq_head)) {
+		TAILQ_INSERT_HEAD(&odfq->odfq_head, wildcard[idx], odf_chain);
+	} else {
+		int len = wildcard[idx]->s.srclen + wildcard[idx]->s.dstlen;
+		odpp = TAILQ_LAST(&odfq->odfq_head, odfqh);
+		while (odpp->s.srclen + odpp->s.dstlen < len)
+			odpp = TAILQ_PREV(odpp, odfqh, odf_chain);
+		TAILQ_INSERT_AFTER(&odfq->odfq_head, odpp, wildcard[idx], odf_chain);
+	}
+	odfq->nrecord++;
+	/* clean up: */
+	for (i = 0; i < 3; i++) {
+		if (i != idx)
+			odflow_free(wildcard[i]);
+		free(candidates[i]);
+	}
+	if (debug) {
+		fprintf(stderr, "odproto_quickmerge: %d/%d merged\n",
+			n, nrecord);
+	}
+
+	return (wildcard[idx]);
+}
+
+void
+odflow_stats(void)
+{
+#ifndef NDEBUG	/* for thread-safe odflow accounting */
+	fprintf(stderr, "odflow_stats: %ld currently allocated (max %ld)\n",
+		odflows_allocated, max_odflows_allocated);
+#endif
 }

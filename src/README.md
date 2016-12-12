@@ -21,7 +21,7 @@ data twice.
 	agurim [-dhpvDFP] [other options] [files]
 	    other options:
 		[-f filter] [-i interval] [-m byte|packet]
-		[-n nflows] [-s duration] [-t thresh]
+		[-n nflows] [-s duration] [-t thresh] [-w file]
 		[-S starttime] [-E endtime]
 
   + `-d`:  
@@ -35,8 +35,9 @@ data twice.
   + `-h`: Display help information and exit.
 
   + `-i interval`:  
-    Specify the aggregation interval in seconds.
-    Default is 60 (60 seconds).
+    Specify the aggregation interval in seconds. Zero interval means
+    the entire duration of the input.
+    Default is 0.
 
   + `-m byte|packet`:  
     Specify the aggregation criteria.  The value is either 'byte' or 'packet'.
@@ -62,6 +63,10 @@ data twice.
 
   + `-v`:
     Print extra debug messages.
+
+  + `-w file`:
+    Specify the output file name.  By default, the results are printed
+    to stdout.
 
   + `-D`:
     Disable protocol specific heuristics for aggregation.
@@ -96,5 +101,126 @@ To specify the time period, you have to specify two among 'starttime',
 'endtime' and 'duration'.
 
 	agurim -i 3600 -d 86400 -S 1426172400 file.agr
+
+========
+# aguri3
+
+aguri3: a new thread-based primary aggregation tools for agurim
+
+aguri3 is the primary aggregation tool for agurim.
+aguri3 employs pthread, one thread for input processing and another
+for aggregation and output.
+aguri3 can produce aggregated flow records using the pcap library, or
+reading the aguri_flow records from the standard input.
+To read NetFlow or sFlow, use "aguri2_xflow" under the subdirectory.
+
+aguri3 reopens the output file when it receives a HUP signal, which can
+be used for log-rotation.
+
+# Usage
+
+	aguri3 [-dhvD] [other options] [files]
+	    other options:
+		[-c count] [-f pcap_filter] [-i interval[,output_interval]]
+		[-m byte|packet] [-p pid_file] [-r pcapfile] [-s pcap_snaplen]
+		[-t thresh_percenrage] [-w outputfile]
+		[-S starttime] [-E endtime]
+
+  + `-c count`:  
+    Exit after processing count packets.
+
+  + `-d`: Enable debug outputs.
+  
+  + `-i interval[,output_interval]`:
+    Specify the aggregation interval in seconds. Zero interval means
+    the entire duration of the input.
+    Default is 0.
+    When output_interval is specified, aguri3 uses the 2-stage
+    aggregation to reduce the CPU load and memory consumption.
+    In the 2-stage aggregation, the input is aggregated every interval
+    but the results are further aggregated to produce the output every
+    output_interval.
+  
+  + `-f pcapfilters`:  
+    Specify pcap filters.
+
+  + `-h`: Display help information and exit.
+
+  + `-i interval[,output_interval]`:
+    Specify the aggregation interval in seconds. Zero interval means
+    the entire duration of the input.
+    Default is 0.
+
+  + `-m byte|packet`:  
+    Specify the aggregation criteria.  The value is either 'byte' or 'packet'.
+    When this option is absent, both byte count and packet count are used,
+    and a flow is aggregatated when both counts are under the threshold.
+
+  + `-p pidfile`:  
+    Write the process id to the pidfile.
+
+  + `-r pcapfile`:  
+    Read packets from pcapfile.
+
+  + `-s duration`:  
+    Specify the snaplen in bytes for pcap.
+
+  + `-t thresh`:  
+    Specify the threshold value for aggregation.  The unit is 1%.
+    Default is 1 (1%).
+
+  + `-v`:
+    Print extra debug messages.
+
+  + `-w file`:
+    Direct output to the speficied file.  By default, output is
+    directed to stdout.
+
+  + `-D`:
+    Disable protocol specific heuristics for aggregation.
+
+  + `-E endtime`:  
+    Specify the endtime in Unix time.
+
+  + `-H max_hashentries`:  
+    Specify the maximum size of the hash to hold the input flows.
+    The default is 1000000 (1 million entries).
+
+  + `-I interface`:  
+    Listen on interface.
+
+  + `-S starttime`:  
+    Specify the starttime in Unix time.
+
+## Examples
+
+To read from an interface and show output records:
+
+	aguri3 -I <ifname>
+
+To read from an interface and write the records to a file every 30
+seconds:
+
+	aguri3 -I <ifname> -i 30 -w <logfile>
+
+To reduce the CPU load and memory consumption, use the 2-stage
+aggregation.  For example, aggregate every 5 seconds but produce
+output every 60 seconds:
+
+	aguri3 -I <ifname> -i 5,60 -w <logfile>
+
+To read a saved pcap file:
+
+	aguri3 -r <pcapfile>
+
+To read netflow data from port 2055, and produce aggregated flow
+records every 60 seconds:
+
+	aguri2_xflow -t netflow -p 2055 | aguri3 -i 60
+
+Similary, to read sflow data from port 6343, and produce aggregated
+flow records every 60 seconds: 
+
+	aguri2_xflow -t sflow -p 6343 | aguri3 -i 60
 
 

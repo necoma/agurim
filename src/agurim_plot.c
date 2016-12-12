@@ -39,91 +39,86 @@
 
 #include "agurim.h"
 
-static int calc_interval();
-static int is_overlapped(struct odflow_spec *s0, struct odflow_spec *s1);
+static void addupcounts(struct response *resp, struct odflow_hash *odfh);
+static int calc_interval(int duration);
 static struct odflow *odfq_parentlookup(struct odf_tailq *odfq, struct odflow *odfp);
 static void odfq_insert(struct odf_tailq *odfq, struct odflow *odfp, enum aggr_criteria criteria);
-static void odproto_countsort();
-static void aguri_preamble_print();
-static void aguri_odflow_print();
-static void json_preamble_print();
-static void json_odflow_print();
-static void debug_preamble_print();
-static void debug_odflow_print();
+static void odproto_countsort(struct odflow *odfp);
+static int area_comp(const void *p0, const void *p1);
+static int count_comp(const void *p0, const void *p1);
+static void aguri_preamble_print(struct response *resp);
+static void aguri_odflow_print(struct response *resp);
+static void json_preamble_print(struct response *resp);
+static void json_odflow_print(struct response *resp);
+static void debug_preamble_print(struct response *resp);
+static void debug_odflow_print(struct response *resp);
+/* XXX total byte/packet ratio used for count sort.  need to set this 
+ * value (total_byte/total_packet) before qsort (ugly...) */
+static double bpratio4sort;
 
-int time_slot;
-time_t *plot_timestamps;
+static int time_slot = 0;
+static time_t *plot_timestamps;
 
-void plot_init()
+void plot_prepare(struct response *resp)
 {
+	struct odflow *odfp;
 	int duration;
-
-	/* reset hashes */
-	odhash_reset(ip_hash);
-	odhash_reset(ip6_hash);
-	if (proto_view)
-		odhash_reset(proto_hash);
-
-	if (query.outfmt == REAGGREGATION)
-		return;
-
+	    
 	/* calculate time buffers */
-	response.interval = calc_interval();
+	duration = resp->end_time - resp->start_time;
+	resp->interval = calc_interval(duration);
 	/* if the calclated interval is much smaller than the recorded
 	 * one, increase it.
 	 */
-	while (response.interval < response.max_interval * 3/4)
-		response.interval *= 2;
+	while (resp->interval < resp->max_interval * 3/4)
+		resp->interval *= 2;
 
 	/* allocate time buffers */
-	duration = response.end_time - response.start_time;
-	response.timeslots = (int)(duration / response.interval);
+	resp->timeslots = (int)(duration / resp->interval) + 1;
 	if (plot_timestamps == NULL)
-		plot_timestamps = calloc(response.timeslots+1, sizeof(time_t));
+		plot_timestamps = calloc(resp->timeslots, sizeof(time_t));
 
-	/* insert the first timestamp */
-	plot_timestamps[0] = response.start_time;
-
-#if 0  /* we don't need this */
-	/* clear idx cache of odflows in the response */
-	TAILQ_FOREACH(odfp, &response.odfq.odfq_head, odf_chain) {
-		cl_clear(odfp->odf_cache);
+	/* make zero entries in the cl caches for plot values */
+	TAILQ_FOREACH(odfp, &resp->odfq.odfq_head, odf_chain) {
+		int i, n = cl_size(odfp->odf_cache);
+		for (i = 0; i < resp->timeslots; i++)
+			if (i < n)
+				cl_set(odfp->odf_cache, i, 0);
+			else
+				cl_append(odfp->odf_cache, 0);
 	}
-#endif	
+
+	/* create the first time slot */
+	plot_addslot(resp->start_time, 0);
 }
 
-void plot_finish()
-{
-	struct odflow *odfp;
-
-	while ((odfp = TAILQ_FIRST(&response.odfq.odfq_head)) != NULL) {
-		TAILQ_REMOVE(&response.odfq.odfq_head, odfp, odf_chain);
-		response.odfq.nrecord--;
-		odflow_free(odfp);
-	}
-	response.nflows = 0;
-}
-
-/* create a new slot in the cache list for plotting */
+/* create a new time slot for plotting */
 void
-plot_addslot()
+plot_addslot(time_t t, int inc_timeslot)
 {
-	struct odflow *odfp;
+	plot_timestamps[time_slot] = t; /* for new slot */
 
-	TAILQ_FOREACH(odfp, &response.odfq.odfq_head, odf_chain) {
-		cl_append(odfp->odf_cache, 0);  /* add a new entry */
-	}
+	if (inc_timeslot)
+		/* inc_timeslot creates a slot with zero values */
+		time_slot++;
+}
+
+/* get the current slot time */
+time_t
+plot_getslottime(void)
+{
+	return (plot_timestamps[time_slot]);
 }
 
 /*
- * walk through the flow hash and add odflow's counts to the
+ * walk through the flow hash and add up odflow's counts to the
  * corresponding slot of odflow's cache list in the response
  */
-void
-plot_addcount(struct odflow_hash *odfh)
+static void
+addupcounts(struct response *resp, struct odflow_hash *odfh)
 {
 	struct odflow *odfp0, *odfp1;
-	int i, size;
+	int i;
 
 	/* lookup overlapped label and update counts */
 	if (odfh->nrecord == 0)  /* no traffic? */
@@ -133,56 +128,84 @@ plot_addcount(struct odflow_hash *odfh)
                 while ((odfp1 = TAILQ_FIRST(&odfh->tbl[i].odfq_head)) != NULL) {
                         TAILQ_REMOVE(&odfh->tbl[i].odfq_head, odfp1, odf_chain);
 			odfh->tbl[i].nrecord--;
-			TAILQ_FOREACH(odfp0, &response.odfq.odfq_head, odf_chain) {
+			/* find the first matching odflow in the list assuming
+			 * the list is already ordered by the prefix lengths */
+			TAILQ_FOREACH(odfp0, &resp->odfq.odfq_head, odf_chain) {
 				if (odfp0->af == odfp1->af &&
-				    is_overlapped(&(odfp0->s), &(odfp1->s))) {
+				    odflowspec_is_overlapped(&(odfp0->s), &(odfp1->s))) {
 					uint64_t cnt;
+					/* add count to this entry */
 					if (query.criteria == BYTE)
 						cnt = odfp1->byte;
 					if (query.criteria == PACKET)
 						cnt = odfp1->packet;
-					/* add cnt to the last cache entry */
-					size = cl_size(odfp0->odf_cache);
-					cl_add(odfp0->odf_cache, size - 1, cnt);
+					cl_add(odfp0->odf_cache, time_slot, cnt);
 					break;
 				}
 			}
+			odflow_free(odfp1);
 		}
 	}
 }
 
+/*
+ * aggregate odflows in the hash(es) for the current interval,
+ * and place the resulted values into the corresponding slot of
+ * the cl_list in the odflows in the response odfq.
+ */
 void
-plot_showdata()
+plot_addupinterval(struct response *resp)
 {
-	odfq_countsort(&response.odfq);
+	if (proto_view == 0) {
+		addupcounts(resp, resp->ip_hash);
+		addupcounts(resp, resp->ip6_hash);
+	} else
+		addupcounts(resp, resp->proto_hash);
+	time_slot++; /* advance the time slot */
+	assert(time_slot <= resp->timeslots);
+}
+
+void
+make_output(struct response *resp)
+{
+	struct odflow *odfp;
+
+	odfq_countsort(&resp->odfq, resp->total_byte, resp->total_packet);
 
 	switch (query.outfmt) {
 	case REAGGREGATION:
-		aguri_preamble_print();
-		aguri_odflow_print();
+		aguri_preamble_print(resp);
+		aguri_odflow_print(resp);
 		break;
 	case JSON:
-		printf("{\n");
-		json_preamble_print();
-		json_odflow_print();
-		printf("}\n");
+		fprintf(wfp, "{\n");
+		json_preamble_print(resp);
+		json_odflow_print(resp);
+		fprintf(wfp, "}\n");
 		break;
 	case DEBUG:
-		debug_preamble_print();
-		debug_odflow_print();
+		debug_preamble_print(resp);
+		debug_odflow_print(resp);
 		break;
 	}
+	fflush(wfp);
+
+	/* release the odflows in the response queue */
+	while ((odfp = TAILQ_FIRST(&resp->odfq.odfq_head)) != NULL) {
+		TAILQ_REMOVE(&resp->odfq.odfq_head, odfp, odf_chain);
+		resp->odfq.nrecord--;
+		odflow_free(odfp);
+	}
+	assert(resp->odfq.nrecord == 0);
+	resp->nflows = 0;
 }
 
 /* compute the appropriate interval from the duration */
 static int
-calc_interval()
+calc_interval(int duration)
 {
-	double duration;
-	int d;
-
-	duration = response.end_time - response.start_time;
-	int interval;
+	double dd = (double)duration;
+	int d, interval;
 
 	/*
 	 * Guideline for a plotting interval
@@ -196,14 +219,14 @@ calc_interval()
 	 * |  1hour   |   30sec     (30) |  120pt  |  	
 	 * +---------------------------------------+
 	 */
-	d = (int)ceil(duration/3600);
+	d = (int)ceil(dd/3600);
 	if (d <= 24) {
 		/* shorter than 24hours: hours * 30 */
 		interval = d * 30;
 		return (interval < 600 ? interval : 600);
 	}
 
-	d = (int)ceil(duration/3600/24);
+	d = (int)ceil(dd/3600/24);
 	if (d <= 7) {
 		/* shorter than 7days: days * 600 */
 		interval = d * 600;
@@ -214,49 +237,17 @@ calc_interval()
 		return (14400);
 	}
 
-	d = (int)ceil(duration/3600/24/31);
+	d = (int)ceil(dd/3600/24/31);
 	if (d <= 12) {
-		/* shorter than 12months: months * 10800 */
+		/* shorter than 12months: months * 14400 */
 		interval = d * 14400;
 		return (interval < 86400 ? interval : 86400);
 	}
 
 	/* longer than 12months: years * 86400 */
-	d = (int)ceil(duration/3600/24/366);
-	interval = (int)duration * 86400;
+	d = (int)ceil(dd/3600/24/366);
+	interval = d * 86400;
 	return (interval); 
-}
-
-/* sort the tailq by the count */
-void
-odfq_countsort(struct odf_tailq *odfq)
-{
-	struct odflow **odflow_list;
-	struct odflow *odfp;
-	int n = 0, i;
-	int nflows = odfq->nrecord;
-
-	odflow_list = malloc(sizeof(struct odflow *) * nflows);
-	if (odflow_list == NULL)
-		err(1, "odfq_countsort:malloc");
-
-	while ((odfp = TAILQ_FIRST(&odfq->odfq_head)) != NULL) {
-		TAILQ_REMOVE(&odfq->odfq_head, odfp, odf_chain);
-		odfq->nrecord--;
-		odflow_list[n++] = odfp;
-	}
-
-	assert(nflows == n);
-	assert(odfq->nrecord == 0);
-
-        /* sort flow entries in order */
-        qsort(odflow_list, n, sizeof(struct odflow *), count_comp);
-
-	for (i = 0; i < n; i++) {
-		TAILQ_INSERT_HEAD(&odfq->odfq_head, odflow_list[i], odf_chain);
-		odfq->nrecord++;
-	}
-	free(odflow_list);
 }
 
 /* aggregate the tailq to the specified numbers */
@@ -332,7 +323,7 @@ odfq_parentlookup(struct odf_tailq *odfq, struct odflow *odfp)
 	TAILQ_FOREACH(_odfp, &odfq->odfq_head, odf_chain) {
 		if (_odfp->af != odfp->af)
 			continue;
-		if (is_overlapped(&(_odfp->s), &(odfp->s))) {
+		if (odflowspec_is_overlapped(&(_odfp->s), &(odfp->s))) {
 			if (par == NULL) {
 				par = _odfp;
 				continue;
@@ -344,8 +335,9 @@ odfq_parentlookup(struct odf_tailq *odfq, struct odflow *odfp)
 	return (par);
 }
 
-static int
-is_overlapped(struct odflow_spec *s0, struct odflow_spec *s1)
+/* is the first flow_spec is a superset of the second one? */
+int
+odflowspec_is_overlapped(struct odflow_spec *s0, struct odflow_spec *s1)
 {
 	if (s0->srclen > s1->srclen || s0->dstlen > s1->dstlen)
 		return (0);
@@ -374,10 +366,13 @@ odfq_insert(struct odf_tailq *odfq, struct odflow *odfp, enum aggr_criteria crit
                                 break;
                 }
 		if (criteria == COMBINATION) {
-			double f, _f;
-			f = countfrac_select(odfp);
-			_f = countfrac_select(_odfp);
-			if (f <= _f)
+			/* XXX assuming bpratio4sort is set in odfq_countsort() */
+			uint64_t c, _c, scaledpkt;
+			scaledpkt = (uint64_t)(bpratio4sort * odfp->packet);
+			c = max(odfp->byte, scaledpkt);
+			scaledpkt = (uint64_t)(bpratio4sort * _odfp->packet);
+			_c = max(_odfp->byte, scaledpkt);
+			if (c <= _c)
 				break;
 		}
                 _odfp = TAILQ_PREV(_odfp, odfqh, odf_chain);
@@ -393,7 +388,30 @@ odfq_insert(struct odf_tailq *odfq, struct odflow *odfp, enum aggr_criteria crit
         }
 }
 
-/* sort the tailq by the sum of prefix lengths */
+/* helper for qsort: compare the sum of prefix length */
+static int
+area_comp(const void *p0, const void *p1)
+{
+	struct odflow *e0, *e1;
+	uint16_t len0, len1;
+
+	e0 = *(struct odflow **)p0;
+	e1 = *(struct odflow **)p1;
+
+	len0 = e0->s.srclen + e0->s.dstlen;
+	len1 = e1->s.srclen + e1->s.dstlen;
+
+	if (len0 < len1)
+		return (1);
+	if (len0 > len1)
+		return (-1);
+	return (0);
+}
+
+/*
+ * sort the tailq by the sum of prefix lengths
+ * from more specific to less specific
+ */
 void
 odfq_areasort(struct odf_tailq *odfq)
 {
@@ -424,6 +442,84 @@ odfq_areasort(struct odf_tailq *odfq)
 	free(odflow_list);
 }
 
+/* helper for qsort: compare the counters by the given criteria */
+static int
+count_comp(const void *p0, const void *p1)
+{
+	struct odflow *odfp0, *odfp1;
+
+	odfp0 = *(struct odflow **)p0;
+	odfp1 = *(struct odflow **)p1;
+
+	switch (query.criteria) {
+	case BYTE:
+		if (odfp0->byte < odfp1->byte)
+			return (-1);
+		else if (odfp0->byte > odfp1->byte)
+			return (1);
+		break;
+	case PACKET:
+		if (odfp0->packet < odfp1->packet)
+			return (-1);
+		else if (odfp0->packet > odfp1->packet)
+			return (1);
+		break;
+	case COMBINATION:
+	{
+		uint64_t c0, c1, scaledpkt;
+
+		scaledpkt = (uint64_t)(bpratio4sort * odfp0->packet);
+		c0 = max(odfp0->byte, scaledpkt);
+		scaledpkt = (uint64_t)(bpratio4sort * odfp1->packet);
+		c1 = max(odfp1->byte, scaledpkt);
+
+		if (c0 < c1)
+			return (-1);
+		else if (c0 > c1)
+			return (1);
+		break;
+	}
+	}
+	return (0);
+}
+
+/* sort the tailq by the count */
+void
+odfq_countsort(struct odf_tailq *odfq, uint64_t total_byte, uint64_t total_packet)
+{
+	struct odflow **odflow_list;
+	struct odflow *odfp;
+	int n = 0, i;
+	int nflows = odfq->nrecord;
+
+	odflow_list = malloc(sizeof(struct odflow *) * nflows);
+	if (odflow_list == NULL)
+		err(1, "odfq_countsort:malloc");
+
+	while ((odfp = TAILQ_FIRST(&odfq->odfq_head)) != NULL) {
+		TAILQ_REMOVE(&odfq->odfq_head, odfp, odf_chain);
+		odfq->nrecord--;
+		odflow_list[n++] = odfp;
+	}
+
+	assert(nflows == n);
+	assert(odfq->nrecord == 0);
+
+	/* XXX for sort */
+	if (total_packet != 0)
+		bpratio4sort = (double)total_byte / total_packet;
+	else 
+		bpratio4sort = 0.0;
+        /* sort flow entries in order */
+        qsort(odflow_list, n, sizeof(struct odflow *), count_comp);
+
+	for (i = 0; i < n; i++) {
+		TAILQ_INSERT_HEAD(&odfq->odfq_head, odflow_list[i], odf_chain);
+		odfq->nrecord++;
+	}
+	free(odflow_list);
+}
+
 /* sort the lower odflows (odprotos) by count */
 static void
 odproto_countsort(struct odflow *odfp)
@@ -447,7 +543,11 @@ odproto_countsort(struct odflow *odfp)
 	assert(m == n);
 
         /* sort flow entries by counts */
-        qsort(odproto_list, n, sizeof(struct odproto *), count_comp2);
+	if (odfp->packet != 0)
+		bpratio4sort = (double)odfp->byte / odfp->packet; /* XXX for count_comp */
+	else 
+		bpratio4sort = 0.0;
+        qsort(odproto_list, n, sizeof(struct odproto *), count_comp);
 
 	for (i = 0; i < n; i++) {
 		TAILQ_INSERT_HEAD(&odfp->odf_odpq.odfq_head, odproto_list[i], odf_chain);
@@ -457,77 +557,81 @@ odproto_countsort(struct odflow *odfp)
 }
 
 static void
-aguri_preamble_print()
+aguri_preamble_print(struct response *resp)
 {
 	char buf[128];
 	double avg_byte, avg_pkt;
 
-	printf("\n");
-	printf("%%!AGURI-2.0\n");
+	fprintf(wfp, "\n");
+	fprintf(wfp, "%%!AGURI-2.0\n");
 
 	strftime(buf, sizeof(buf), "%a %b %d %T %Y",
-	    localtime(&response.start_time));
-	printf("%%%%StartTime: %s ", buf);
+	    localtime(&resp->start_time));
+	fprintf(wfp, "%%%%StartTime: %s ", buf);
 	strftime(buf, sizeof(buf), "%Y/%m/%d %T",
-	    localtime(&response.start_time));
-	printf("(%s)\n", buf);
+	    localtime(&resp->start_time));
+	fprintf(wfp, "(%s)\n", buf);
 	strftime(buf, sizeof(buf), "%a %b %d %T %Y",
-	    localtime(&response.end_time));
-	printf("%%%%EndTime: %s ", buf);
+	    localtime(&resp->end_time));
+	fprintf(wfp, "%%%%EndTime: %s ", buf);
 	strftime(buf, sizeof(buf), "%Y/%m/%d %T",
-	    localtime(&response.end_time));
-	printf("(%s)\n", buf);
+	    localtime(&resp->end_time));
+	fprintf(wfp, "(%s)\n", buf);
 
 	double sec =
-	    (double)(response.end_time - response.start_time);
+	    (double)(resp->end_time - resp->start_time);
 	if (sec != 0.0) {
-		avg_pkt = (double)response.total_packet / sec;
-		avg_byte = (double)response.total_byte * 8 / sec;
+		avg_pkt = (double)resp->total_packet / sec;
+		avg_byte = (double)resp->total_byte * 8 / sec;
 
 		if (avg_byte > 1000000000.0)
-			printf("%%AvgRate: %.2fGbps %.2fpps\n",
+			fprintf(wfp, "%%AvgRate: %.2fGbps %.2fpps\n",
 			    avg_byte/1000000000.0, avg_pkt);
 		else if (avg_byte > 1000000.0)
-			printf("%%AvgRate: %.2fMbps %.2fpps\n",
+			fprintf(wfp, "%%AvgRate: %.2fMbps %.2fpps\n",
 			    avg_byte/1000000.0, avg_pkt);
 		else if (avg_byte > 1000.0)
-			printf("%%AvgRate: %.2fKbps %.2fpps\n",
+			fprintf(wfp, "%%AvgRate: %.2fKbps %.2fpps\n",
 			    avg_byte/1000.0, avg_pkt);
 		else
-			printf("%%AvgRate: %.2fbps %.2fpps\n",
+			fprintf(wfp, "%%AvgRate: %.2fbps %.2fpps\n",
 			    avg_byte, avg_pkt);
 #if 1
-		printf("%%total: %"PRIu64" bytes  %"PRIu64" packets\n",
-			response.total_byte, response.total_packet);
+		fprintf(wfp, "%%total: %"PRIu64" bytes  %"PRIu64" packets\n",
+			resp->total_byte, resp->total_packet);
 #endif
 	}
 
 	if (query.criteria == BYTE)
-		printf("%% criteria: byte counter ");
+		fprintf(wfp, "%% criteria: byte counter ");
 	else if (query.criteria == PACKET)
-		printf("%% criteria: pkt counter ");
+		fprintf(wfp, "%% criteria: pkt counter ");
 	else if (query.criteria == COMBINATION)
-		printf("%% criteria: combination ");
+		fprintf(wfp, "%% criteria: combination ");
 
-	printf("(%.f %% for addresses, %.f %% for protocol data)\n",
-	    (double)query.threshold, (double)query.threshold);
-	printf("\n");
+	fprintf(wfp, "(threshold %d%% for addresses, %d%% for protocol)\n",
+            query.threshold,
+	    disable_heuristics < 2 ? query.threshold * 4 : query.threshold);
+	fprintf(wfp, "%%input odflows: IPv4:%"PRIu64" IPv6:%"PRIu64"\n",
+	    resp->input_odflows, resp->input_odflows6);
+
+	fprintf(wfp, "\n");
 }
 
 static void
-aguri_odflow_print()
+aguri_odflow_print(struct response *resp)
 {
 	struct odflow *odfp;
 	struct odflow *odpp;
 	int i = 1, n;
 	
-        TAILQ_FOREACH(odfp, &response.odfq.odfq_head, odf_chain) {
-		printf("[%2d] ", i++);
+        TAILQ_FOREACH(odfp, &resp->odfq.odfq_head, odf_chain) {
+		fprintf(wfp, "[%2d] ", i++);
 		odflow_print(odfp);
-		printf(": %" PRIu64 " (%.2f%%)\t%" PRIu64 " (%.2f%%)\n",
-		    odfp->byte, (double)odfp->byte / response.total_byte * 100,
-		    odfp->packet, (double)odfp->packet / response.total_packet * 100);
-		printf("\t");
+		fprintf(wfp, ": %" PRIu64 " (%.2f%%)\t%" PRIu64 " (%.2f%%)\n",
+		    odfp->byte, (double)odfp->byte / resp->total_byte * 100,
+		    odfp->packet, (double)odfp->packet / resp->total_packet * 100);
+		fprintf(wfp, "\t");
 
 		odproto_countsort(odfp);
 
@@ -537,13 +641,13 @@ aguri_odflow_print()
 			odfp->odf_odpq.nrecord--;
 			if (odpp->s.srclen != 0 || odpp->s.dstlen != 0) {
 #if 1
-				printf("[");
+				fprintf(wfp, "[");
 				odflow_print(odpp);
-				printf("]");
+				fprintf(wfp, "]");
 #else				
 				odproto_print(odpp);
 #endif
-				printf(" %.2f%% %.2f%% ",
+				fprintf(wfp, " %.2f%% %.2f%% ",
 				    (double)odpp->byte / odfp->byte * 100,
 				    (double)odpp->packet / odfp->packet * 100);
 				n++;
@@ -551,64 +655,64 @@ aguri_odflow_print()
 			odflow_free(odpp);
 		}
 		if (n == 0)
-			printf("[*:*:*] 100.00%% 100.00%%");
-		printf("\n");
+			fprintf(wfp, "[*:*:*] 100.00%% 100.00%%");
+		fprintf(wfp, "\n");
 	}
 }
 
 static void
-json_preamble_print()
+json_preamble_print(struct response *resp)
 {
 	if (query.criteria == BYTE)
-		printf("\"criteria\": \"byte\", \n");
+		fprintf(wfp, "\"criteria\": \"byte\", \n");
 	if (query.criteria == PACKET)
-		printf("\"criteria\": \"packet\", \n");
+		fprintf(wfp, "\"criteria\": \"packet\", \n");
 
-	printf("\"duration\": %ld, \n",
-	    response.end_time - response.start_time);
-	printf("\"start_time\": %ld, \n", response.start_time);
-	printf("\"end_time\": %ld, \n", response.end_time);
+	fprintf(wfp, "\"duration\": %ld, \n",
+	    resp->end_time - resp->start_time);
+	fprintf(wfp, "\"start_time\": %ld, \n", resp->start_time);
+	fprintf(wfp, "\"end_time\": %ld, \n", resp->end_time);
 
 	/* XXXkatoon remove comment out if needed
 	if (sec != 0.0) {
 		avg_byte = total_bytes/sec;
 		avg_pkt = total_packets/sec;
-		printf("\"avgRate\": [%.2f, %.2f],\n", avg_byte, avg_pkt);
+		fprintf(wfp, "\"avgRate\": [%.2f, %.2f],\n", avg_byte, avg_pkt);
 	}
 	*/
 
-	printf("\"nflows\": %d, \n", response.nflows);
+	fprintf(wfp, "\"nflows\": %d, \n", resp->nflows);
 	
-	printf("\"interval\": %d, \n", response.interval);
+	fprintf(wfp, "\"interval\": %d, \n", resp->interval);
 }
 
 static void
-json_odflow_print()
+json_odflow_print(struct response *resp)
 {
 	struct odflow *odfp;
 	struct odflow *odpp;
 	uint64_t tmp_total;
 	int i = 0, n;
 
-	printf("\"labels\":[ ");
-        TAILQ_FOREACH(odfp, &response.odfq.odfq_head, odf_chain) {
-		printf("\"[%2d] ", ++i);
+	fprintf(wfp, "\"labels\":[ ");
+        TAILQ_FOREACH(odfp, &resp->odfq.odfq_head, odf_chain) {
+		fprintf(wfp, "\"[%2d] ", ++i);
 		odflow_print(odfp);
-		printf(" %.2f%%",
+		fprintf(wfp, " %.2f%%",
 		    (query.criteria == BYTE) ?
-		    (double)odfp->byte / response.total_byte *100 :
-		    (double)odfp->packet / response.total_packet * 100);
-		printf("  ");
+		    (double)odfp->byte / resp->total_byte *100 :
+		    (double)odfp->packet / resp->total_packet * 100);
+		fprintf(wfp, "  ");
 		odproto_countsort(odfp);
 		n = 0;
 		while ((odpp = TAILQ_FIRST(&odfp->odf_odpq.odfq_head)) != NULL) {
 			TAILQ_REMOVE(&odfp->odf_odpq.odfq_head, odpp, odf_chain);
 			odfp->odf_odpq.nrecord--;
 			if (odpp->s.srclen != 0 || odpp->s.dstlen != 0) {
-				printf("[");
+				fprintf(wfp, "[");
 				odflow_print(odpp);
-				printf("]");
-				printf(" %.2f%% ",
+				fprintf(wfp, "]");
+				fprintf(wfp, " %.2f%% ",
 				    (query.criteria == BYTE) ?
 				    (double)odpp->byte / odfp->byte * 100 :
 				    (double)odpp->packet / odfp->packet * 100);
@@ -618,51 +722,51 @@ json_odflow_print()
 		}
 #if 1	/* kjc: use the same trick as the reaggregation case */
 		if (n == 0)
-			printf("[*:*:*] 100.00%% ");
+			fprintf(wfp, "[*:*:*] 100.00%% ");
 #endif
-		printf("\", ");
+		fprintf(wfp, "\", ");
 	}
-	printf(" \"TOTAL\" ");
-	printf("],\n");
+	fprintf(wfp, " \"TOTAL\" ");
+	fprintf(wfp, "],\n");
 
-	printf("\"data\": [");
-	for (i = 0; i < time_slot - 1; i++) {
+	fprintf(wfp, "\"data\": [");
+	for (i = 0; i < time_slot; i++) {
 		tmp_total = 0;
-		printf("[%ld, ", plot_timestamps[i]);
-		TAILQ_FOREACH(odfp, &response.odfq.odfq_head, odf_chain) {
+		fprintf(wfp, "[%ld, ", plot_timestamps[i]);
+		TAILQ_FOREACH(odfp, &resp->odfq.odfq_head, odf_chain) {
 			uint64_t cnt = cl_get(odfp->odf_cache, i);
 			tmp_total += cnt;
-			printf("%" PRIu64 ", ", cnt);
+			fprintf(wfp, "%" PRIu64 ", ", cnt);
 		}
-		printf("%" PRIu64 "]", tmp_total);
-		if (i != time_slot - 2)
-			printf(", ");
+		fprintf(wfp, "%" PRIu64 "]", tmp_total);
+		if (i != time_slot - 1)
+			fprintf(wfp, ", ");
 	}
-	printf("]\n");
+	fprintf(wfp, "]\n");
 }
 
 static void
-debug_preamble_print()
+debug_preamble_print(struct response *resp)
 {
-	printf("# ");
+	fprintf(wfp, "# ");
 	if (query.criteria == BYTE)
-		printf("criteria: byte, ");
+		fprintf(wfp, "criteria: byte, ");
 	if (query.criteria == PACKET)
-		printf("criteria: packet, ");
+		fprintf(wfp, "criteria: packet, ");
 
-	printf("interval: %d, ", response.interval);
-	printf("nflows: %d, ", response.nflows);
+	fprintf(wfp, "interval: %d, ", resp->interval);
+	fprintf(wfp, "nflows: %d, ", resp->nflows);
 	
-	printf("duration: %ld, ",
-	    response.end_time - response.start_time);
+	fprintf(wfp, "duration: %ld, ",
+	    resp->end_time - resp->start_time);
 
-	printf("start_time: %ld, ", response.start_time); 
-	printf("end_time: %ld \n", response.end_time); 
+	fprintf(wfp, "start_time: %ld, ", resp->start_time); 
+	fprintf(wfp, "end_time: %ld \n", resp->end_time); 
 
 }
 
 static void
-debug_odflow_print()
+debug_odflow_print(struct response *resp)
 {
 	struct odflow *odfp;
 	struct odflow *odpp;
@@ -670,25 +774,25 @@ debug_odflow_print()
 	int i = 0, n;
 
 	/* print labels */
-	printf("# labels:"); 
-        TAILQ_FOREACH(odfp, &response.odfq.odfq_head, odf_chain) {
-		printf("\"[%2d] ", ++i);
+	fprintf(wfp, "# labels:"); 
+        TAILQ_FOREACH(odfp, &resp->odfq.odfq_head, odf_chain) {
+		fprintf(wfp, "\"[%2d] ", ++i);
 		odflow_print(odfp);
-		printf(" %.2f%%",
+		fprintf(wfp, " %.2f%%",
 		    (query.criteria == BYTE) ?
-		    (double)odfp->byte / response.total_byte *100 :
-		    (double)odfp->packet / response.total_packet * 100);
-		printf("  ");
+		    (double)odfp->byte / resp->total_byte *100 :
+		    (double)odfp->packet / resp->total_packet * 100);
+		fprintf(wfp, "  ");
 		odproto_countsort(odfp);
 		n = 0;
 		while ((odpp = TAILQ_FIRST(&odfp->odf_odpq.odfq_head)) != NULL) {
 			TAILQ_REMOVE(&odfp->odf_odpq.odfq_head, odpp, odf_chain);
 			odfp->odf_odpq.nrecord--;
 			if (odpp->s.srclen != 0 || odpp->s.dstlen != 0) {
-				printf("[");
+				fprintf(wfp, "[");
 				odflow_print(odpp);
-				printf("]");
-				printf(" %.2f%% ",
+				fprintf(wfp, "]");
+				fprintf(wfp, " %.2f%% ",
 				    (query.criteria == BYTE) ?
 				    (double)odpp->byte / odfp->byte * 100 :
 				    (double)odpp->packet / odfp->packet * 100);
@@ -698,24 +802,24 @@ debug_odflow_print()
 		}
 #if 1	/* kjc: use the same trick as the reaggregation case */
 		if (n == 0)
-			printf("[*:*:*] 100.00%% ");
+			fprintf(wfp, "[*:*:*] 100.00%% ");
 #endif
-		printf("\"");
-		printf(", ");
+		fprintf(wfp, "\"");
+		fprintf(wfp, ", ");
 	}
-	printf("\"TOTAL\"\n");
-	printf("\n");
+	fprintf(wfp, "\"TOTAL\"\n");
+	fprintf(wfp, "\n");
 
 	/* print plot data */
-	for (i = 0; i < time_slot - 1; i++) {
+	for (i = 0; i < time_slot; i++) {
 		tmp_total = 0;
-		printf("%ld, ", plot_timestamps[i]);
-		TAILQ_FOREACH(odfp, &response.odfq.odfq_head, odf_chain) {
+		fprintf(wfp, "%ld, ", plot_timestamps[i]);
+		TAILQ_FOREACH(odfp, &resp->odfq.odfq_head, odf_chain) {
 			uint64_t cnt;
 			cnt = cl_get(odfp->odf_cache, i);
 			tmp_total += cnt;
-			printf("%" PRIu64 ", ", cnt);
+			fprintf(wfp, "%" PRIu64 ", ", cnt);
 		}
-		printf("%" PRIu64 "\n", tmp_total);
+		fprintf(wfp, "%" PRIu64 "\n", tmp_total);
 	}
 }

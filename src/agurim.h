@@ -92,13 +92,15 @@ struct odflow {
 	struct odf_tailq odf_odpq;  /* list of lower odflows for this flow */
 };
 
-struct _query {
+struct query {
 	/* essential parameters */
 	enum aggr_criteria criteria;
-	int interval;
-	int threshold;
-	int nflows;
-	int duration;
+	int interval;	/* aggregation interval */
+	int output_interval; /* interval for outputs in 2-stage aggregation */
+	int threshold;	/* threshold in percent */
+	int nflows;	/* the number of result flows */
+	int duration;	/* total duration */
+	int count;	/* if non-zero, exit after processing 'count' packets */
 	time_t start_time;
 	time_t end_time;
 
@@ -108,44 +110,38 @@ struct _query {
 	int f_af;
 };
 
-struct _response {
+struct response {
 	/* essential parameters */
-	enum aggr_criteria criteria;
 	int interval;
 	int threshold;
 	int nflows;
 	int duration;
 	time_t start_time;
 	time_t end_time;
-	struct odf_tailq odfq;  /* odflow queue */
+	struct odf_tailq odfq;  /* odflow queue for results */
 	/* internal parameters */
-	int timeslots;	/* number of time slots for each entry */
-	int max_interval; /* maximum interval captured from log files */
-	int current_time;
+	int timeslots; /* number of time slots for for plotting */
+	int max_interval; /* max interval captured from logs (for plotting) */
+	time_t current_time; /* current log time (for plotting) */
 	uint64_t total_byte, total_packet;
-	uint64_t thresh_byte, thresh_packet; 
+	uint64_t thresh_byte, thresh_packet;
+	uint64_t input_odflows;  /* # of input IPv4 odflows */
+	uint64_t input_odflows6; /* (for IPv6, these are just informational) */
+	struct odflow_hash *ip_hash;
+	struct odflow_hash *ip6_hash;
+	struct odflow_hash *proto_hash;
 };
 
-
-extern struct odflow_hash *ip_hash;
-extern struct odflow_hash *ip6_hash;
-extern struct odflow_hash *proto_hash;
-
-extern struct _query query;
-extern struct _response response;
+extern struct query query;
+extern struct response *resp;
 
 extern int proto_view;
 extern int disable_heuristics;	/* do not use label heuristics */
 extern int verbose;
-
-extern int time_slot;
-extern time_t *plot_timestamps;
+extern int debug;
+extern FILE *wfp;
 
 /* agurim_subr.c */
-int area_comp(const void *p0, const void *p1);
-double countfrac_select(struct odflow *odfp);
-int count_comp(const void *p0, const void *p1);
-int count_comp2(const void *p0, const void *p1);
 int prefix_comp(uint8_t *r, uint8_t *r2, uint8_t len);
 void prefix_set(uint8_t *r0, uint8_t len, uint8_t *r1, int bytesize);
 void odflow_print(struct odflow *odfp);
@@ -171,33 +167,44 @@ int cl_add(struct cache_list *clp, int i, uint64_t val);
 #endif
 
 /* odflow.c */
-void odhash_init();
+void odhash_init(struct response *resp);
 struct odflow_hash *odhash_alloc(int n);
 void odhash_free(struct odflow_hash *odfh);
 void odhash_reset(struct odflow_hash *odfh);
+void odhash_resetall(struct response *resp);
 struct odflow *
-odflow_addcount(struct odflow_spec *odfsp, int af, uint64_t byte, uint64_t packet);
+odflow_addcount(struct odflow_spec *odfsp, int af, uint64_t byte,
+    uint64_t packet, struct response *resp);
 void odproto_addcount(struct odflow *odfp, struct odflow_spec *odpsp, int af,
     uint64_t byte, uint64_t packet);
 struct odflow *
 odflow_lookup(struct odflow_hash *odfh, struct odflow_spec *odfsp);
 struct odflow *odflow_alloc(struct odflow_spec *odfsp);
 void odflow_free(struct odflow *odfp);
+void odflow_stats(void);
 
 #define max(a, b)	(((a)>(b))?(a):(b))
 #define min(a, b)	(((a)<(b))?(a):(b))
 
 /* hhh.c */
-void hhh_run();
+int hhh_run(struct response *resp);
+struct odflow_spec odflowspec_gen(struct odflow_spec *odfsp, int label[], int bytesize);
 
 /* agurim_plot.c */
 void odfq_listreduce(struct odf_tailq *odfq, int nflows);
 void odfq_areasort(struct odf_tailq *odfq);
-void odfq_countsort(struct odf_tailq *odfq);
+void odfq_countsort(struct odf_tailq *odfq, uint64_t total_byte, uint64_t total_packet);
 int odfq_moveall(struct odf_tailq *from, struct odf_tailq *to);
+int odflowspec_is_overlapped(struct odflow_spec *s0, struct odflow_spec *s1);
 
-void plot_init(void);
-void plot_finish(void);
-void plot_addslot(void);
-void plot_addcount(struct odflow_hash *odfh);
-void plot_showdata(void);
+void plot_prepare(struct response *resp);
+time_t plot_getslottime(void);
+void plot_addslot(time_t t, int inc_timeslot);
+void plot_addupinterval(struct response *resp);
+void make_output(struct response *resp);
+
+/* aguri3.c */
+struct aguri_flow;
+int check_flowtime(const struct aguri_flow *agf);
+int do_agflow(const struct aguri_flow *agf);
+
