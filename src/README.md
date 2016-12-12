@@ -108,11 +108,12 @@ To specify the time period, you have to specify two among 'starttime',
 aguri3: a new thread-based primary aggregation tools for agurim
 
 aguri3 is the primary aggregation tool for agurim.
-aguri3 employs pthread, one thread for input processing and another
-for aggregation and output.
+aguri3 shares the same aggregation engine with agurim and employs
+pthread: one thread for input processing and another for aggregation
+and output.
 aguri3 can produce aggregated flow records using the pcap library, or
 reading the aguri_flow records from the standard input.
-To read NetFlow or sFlow, use "aguri2_xflow" under the subdirectory.
+To read NetFlow or sFlow, use "aguri2_xflow".
 
 aguri3 reopens the output file when it receives a HUP signal, which can
 be used for log-rotation.
