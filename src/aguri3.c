@@ -391,11 +391,11 @@ restore_results(struct response *resp, struct saved_results *prev)
 {
 	struct odflow *odfp;
 	struct odflow_hash *odfh;
-	int resid, need_output = 0;
+	int remainder, need_output = 0;
 
-	/* if end_time is close to the output interval boundary, output */
-	resid = resp->end_time % query.output_interval;
-	if (resid == 0 || resid >= query.output_interval - 2)
+	/* if end_time is at the output interval boundary, output */
+	remainder = resp->end_time % query.output_interval;
+	if (remainder >= query.output_interval - 1 || remainder == 0)
 		need_output = 1;
 
 	/* if idle for more than output_interval, discard the saved results */

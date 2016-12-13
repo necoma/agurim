@@ -143,6 +143,9 @@ int main(int argc, char **argv)
 
 		/* aggregate odflows in the hash(es) */
 		nflows = hhh_run(response);
+		if (nflows == 0)
+			/* no output produced */
+			break;
 
 		if (query.outfmt == REAGGREGATION)
 			/* only one pass for reaggregation */
@@ -155,7 +158,8 @@ int main(int argc, char **argv)
 		response->start_time = 0;
 		plot_phase = 1;
 	}
-	make_output(response);
+	if (nflows > 0)
+		make_output(response);
 
 	finish();
 
