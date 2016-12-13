@@ -125,7 +125,7 @@ be used for log-rotation.
 		[-c count] [-f pcap_filter] [-i interval[,output_interval]]
 		[-m byte|packet] [-p pid_file] [-r pcapfile] [-s pcap_snaplen]
 		[-t thresh_percenrage] [-w outputfile]
-		[-P rtprio] [-S starttime] [-E endtime]
+		[-P rtprio] [-S starttime] [-E endtime] [-T timeoffset]
 
   + `-c count`:  
     Exit after processing count packets.
@@ -196,6 +196,10 @@ be used for log-rotation.
 
   + `-S starttime`:  
     Specify the starttime in Unix time.
+
+  + `-T timeoffset`:  
+    Specify the timeoffset in hour to adjust the time in output
+    (when the OS time is not set to the local time).
 
 ## Examples
 

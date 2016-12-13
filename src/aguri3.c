@@ -105,6 +105,7 @@ int proto_view = 0;
 int verbose = 0;
 int debug = 0;
 int use_rtprio = 0;
+int timeoffset = 0;	/* for adjusting localtime */
 int max_hashentries = 1000000; /* max odflows in a hash: 1M entries.
 				* make a summary when a hash exeeds this
 				* value so as to avoid slowdown */
@@ -123,6 +124,7 @@ usage()
 	fprintf(stderr, "         [-t thresh_percentage] [-w outputfile]\n");
 	fprintf(stderr, "         [-H max_hashentries] [-I pcap_interface]\n");
 	fprintf(stderr, "         [-P rtprio] [-S start_time] [-E end_time]\n");
+	fprintf(stderr, "         [-T timeoffset]\n");
 	exit(1);
 }
 
@@ -274,7 +276,7 @@ option_parse(int argc, void *argv)
 	int ch;
 	char *cp;
 
-	while ((ch = getopt(argc, argv, "c:df:hi:m:p:r:s:t:vw:DE:H:I:P:S:")) != -1) {
+	while ((ch = getopt(argc, argv, "c:df:hi:m:p:r:s:t:vw:DE:H:I:P:S:T:")) != -1) {
 		switch (ch) {
 		case 'c':
 			query.count = strtol(optarg, NULL, 10);
@@ -338,6 +340,9 @@ option_parse(int argc, void *argv)
 			break;
 		case 'S':
 			query.start_time = strtol(optarg, NULL, 10);
+			break;
+		case 'T':
+			timeoffset = (int)strtol(optarg, NULL, 10) * 3600;
 			break;
 		default:
 			usage();

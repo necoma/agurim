@@ -39,6 +39,8 @@
 
 #include "agurim.h"
 
+extern int timeoffset;
+
 static void addupcounts(struct response *resp, struct odflow_hash *odfh);
 static int calc_interval(int duration);
 static struct odflow *odfq_parentlookup(struct odf_tailq *odfq, struct odflow *odfp);
@@ -561,21 +563,20 @@ aguri_preamble_print(struct response *resp)
 {
 	char buf[128];
 	double avg_byte, avg_pkt;
+	time_t t;
 
 	fprintf(wfp, "\n");
 	fprintf(wfp, "%%!AGURI-2.0\n");
 
-	strftime(buf, sizeof(buf), "%a %b %d %T %Y",
-	    localtime(&resp->start_time));
+	t = resp->start_time + timeoffset;
+	strftime(buf, sizeof(buf), "%a %b %d %T %Y", localtime(&t));
 	fprintf(wfp, "%%%%StartTime: %s ", buf);
-	strftime(buf, sizeof(buf), "%Y/%m/%d %T",
-	    localtime(&resp->start_time));
+	strftime(buf, sizeof(buf), "%Y/%m/%d %T", localtime(&t));
 	fprintf(wfp, "(%s)\n", buf);
-	strftime(buf, sizeof(buf), "%a %b %d %T %Y",
-	    localtime(&resp->end_time));
+	t = resp->end_time + timeoffset;
+	strftime(buf, sizeof(buf), "%a %b %d %T %Y", localtime(&t));
 	fprintf(wfp, "%%%%EndTime: %s ", buf);
-	strftime(buf, sizeof(buf), "%Y/%m/%d %T",
-	    localtime(&resp->end_time));
+	strftime(buf, sizeof(buf), "%Y/%m/%d %T", localtime(&t));
 	fprintf(wfp, "(%s)\n", buf);
 
 	double sec =
