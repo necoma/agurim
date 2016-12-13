@@ -135,7 +135,7 @@ pcap_read(const char *dumpfile, const char *interface,
 		{
 			/* check the buffer size */
 			u_int bufsize;
-			int fd = fileno(pcap_file(pd));
+			int fd = pcap_fileno(pd);
 
 			if (ioctl(fd, BIOCGBLEN, (caddr_t)&bufsize) < 0)
 				perror("BIOCGBLEN");
