@@ -403,8 +403,8 @@ restore_results(struct response *resp, struct saved_results *prev)
 	if (remainder >= query.output_interval - 1 || remainder == 0)
 		need_output = 1;
 
-	/* if idle for more than output_interval, discard the saved results */
-	if (resp->end_time - prev->start_time > query.output_interval + 2) {
+	/* if idle for a long time, discard the saved results */
+	if (resp->end_time - prev->start_time > query.output_interval * 4) {
 		while ((odfp = TAILQ_FIRST(&prev->odfq.odfq_head)) != NULL) {
 			TAILQ_REMOVE(&prev->odfq.odfq_head, odfp, odf_chain);
 			prev->odfq.nrecord--;
