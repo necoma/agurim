@@ -138,7 +138,11 @@ int main(int argc, char **argv)
 		 */
 		if (plot_phase) {
 			/* add up remaining counts for the last interval */
-			plot_addupinterval(response);
+			if (response->ip_hash->nrecord > 0 ||
+			    response->ip6_hash->nrecord > 0 ||
+			    (response->proto_hash != NULL &&
+				response->proto_hash->nrecord > 0))
+				plot_addupinterval(response);
 			break;
 		}
 
