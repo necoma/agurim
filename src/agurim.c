@@ -359,9 +359,10 @@ file_parse(char **files)
         if (stat(*files, &st) < 0) {
 #if 1
 		/* don't exit when cgi passes file names beyond the latest */
+		warn("stat(%s) fails", *files);
 		return;
 #else
-		err(1, "stat(%s) fails.", *files);
+		err(1, "stat(%s) fails", *files);
 #endif
 	}
 
