@@ -620,6 +620,9 @@ read_flow(FILE *fp)
 					fprintf(stderr, "\n read %lu flows\n", n);
 				return (0);
 			}
+			if (ferror(fp) == EINTR)
+				/* got hup? */
+				continue;
 			warn("fread failed!");
 			return (-1);
 		}
