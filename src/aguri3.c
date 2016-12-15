@@ -615,18 +615,14 @@ read_flow(FILE *fp)
 
 	while (1) {
 		if (fread(&agflow, sizeof(agflow), 1, fp) != 1) {
-			int err;
 			if (feof(fp)) {
 				if (debug)
 					fprintf(stderr, "\n read %lu flows\n", n);
 				return (0);
 			}
-			if ((err = ferror(fp)) != 0) {
-				/* got hup? */
-				warn("fread failed! %d", err);
-				clearerr(fp);
+			if (errno == EINTR && gotsig_hup != 0)
+				/* got hup */
 				continue;
-			}
 			warn("fread failed!");
 			return (-1);
 		}
