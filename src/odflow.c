@@ -98,8 +98,8 @@ slot_fetch(uint8_t *v1, uint8_t *v2, int n)
 void
 odhash_init(struct response *resp)
 {
-	resp->ip_hash = odhash_alloc(1024);
-	resp->ip6_hash = odhash_alloc(1024);
+	resp->ip_hash = odhash_alloc(1024*16);
+	resp->ip6_hash = odhash_alloc(1024*16);
 	if (proto_view)
 		resp->proto_hash = odhash_alloc(512);
 }
@@ -121,7 +121,7 @@ odhash_alloc(int n)
 	buckets = 1;
 	while (buckets < n) {
 		buckets *= 2;
-		if (buckets == 4096)
+		if (buckets == 1024*16)
 			break;	/* max size */
 	}
 
