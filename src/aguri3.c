@@ -163,6 +163,7 @@ int main(int argc, char **argv)
 	sigaction(SIGINT, &act, NULL);
 	sigaction(SIGQUIT, &act, NULL);
 	act.sa_handler = sig_hup;
+	act.sa_flags |= SA_RESTART;  /* restart interrupted system calls */
 	sigaction(SIGHUP, &act, NULL);
 
 #ifdef __FreeBSD__
@@ -620,9 +621,11 @@ read_flow(FILE *fp)
 					fprintf(stderr, "\n read %lu flows\n", n);
 				return (0);
 			}
+#if 0  /* no longer needed as we set SA_RESTART for sigaction */
 			if (errno == EINTR && gotsig_hup != 0)
 				/* got hup */
 				continue;
+#endif
 			warn("fread failed!");
 			return (-1);
 		}
