@@ -401,7 +401,7 @@ restore_results(struct response *resp, struct saved_results *prev)
 
 	/* if end_time is at the output interval boundary, output */
 	remainder = resp->end_time % query.output_interval;
-	if (remainder >= query.output_interval - 1 || remainder == 0)
+	if (remainder == 0 || remainder >= query.output_interval - 1)
 		need_output = 1;
 
 	/* if idle for a long time, discard the saved results */
@@ -549,6 +549,10 @@ check_flowtime(const struct aguri_flow *agf)
 				"ip_hash:%d ip6_hash:%d max_hashentries:%d\n",
 				cur_resp->ip_hash->nrecord,
 				cur_resp->ip6_hash->nrecord, max_hashentries);
+
+		/* for interval outputs, set end_time to the interval boundary */
+		if (cur_resp->interval != 0 && ts >= ts_next)
+			cur_resp->end_time = ts_next;
 
 		switch_response();
 		cur_resp->start_time = ts;
