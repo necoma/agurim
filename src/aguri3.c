@@ -51,6 +51,9 @@
 #include <paths.h>
 #include <signal.h>
 #include <pthread.h>
+#ifdef __FreeBSD__
+#include <pthread_np.h>
+#endif
 
 #include "agurim.h"
 #include "aguri_flow.h"
@@ -199,7 +202,9 @@ int main(int argc, char **argv)
 	pthread_attr_init(&attr);
 	if (pthread_create(&aggregator_thread, &attr, aggregator, (void *)NULL) != 0)
 		err(1, "pthread_create failed!");
-
+#ifdef __FreeBSD__
+	pthread_set_name_np(aggregator_thread, "aggregator");
+#endif
 	if (pcapfile != NULL || pcap_interface != NULL)
 		pcap_read(pcapfile, pcap_interface, pcapfilters, pcap_snaplen);
 	else
