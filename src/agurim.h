@@ -127,6 +127,7 @@ struct response {
 	uint64_t thresh_byte, thresh_packet;
 	uint64_t input_odflows;  /* # of input IPv4 odflows */
 	uint64_t input_odflows6; /* (for IPv6, these are just informational) */
+	int	processing_time;	/* processing time in ms */
 	struct odflow_hash *ip_hash;
 	struct odflow_hash *ip6_hash;
 	struct odflow_hash *proto_hash;
@@ -139,6 +140,7 @@ extern int proto_view;
 extern int disable_heuristics;	/* do not use label heuristics */
 extern int verbose;
 extern int debug;
+extern unsigned int blocking_count; /* thread blocking counter for aguri3 */
 extern FILE *wfp;
 
 /* agurim_subr.c */

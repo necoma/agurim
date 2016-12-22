@@ -33,6 +33,7 @@
  * hitters: algorithms, evaluation, and applications."
  */
 
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -588,6 +589,10 @@ hhh_run(struct response *resp)
 {
 	struct odflow *odfp;
 	int nflows = 0;
+	struct timeval t0, t1;
+
+	gettimeofday(&t0, NULL);
+	resp->processing_time = 0;
 
 	/* create a dummy hash containing one dummy entry */
 	if (dummy_hash == NULL) {
@@ -681,6 +686,8 @@ hhh_run(struct response *resp)
 		dummy_hash = NULL;
 	}
 #endif
-
+	gettimeofday(&t1, NULL);
+	resp->processing_time = (t1.tv_sec - t0.tv_sec) * 1000 + 
+	    			(t1.tv_usec - t0.tv_usec) / 1000;
 	return (resp->nflows);
 }

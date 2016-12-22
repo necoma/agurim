@@ -112,6 +112,7 @@ int timeoffset = 0;	/* for adjusting localtime */
 int max_hashentries = 1000000; /* max odflows in a hash: 1M entries.
 				* make a summary when a hash exeeds this
 				* value so as to avoid slowdown */
+unsigned int blocking_count; /* cumulative count of the main thread blocked */
 FILE *wfp;
 
 static void
@@ -378,7 +379,9 @@ switch_response(void)
 	if ((rval = pthread_mutex_trylock(&resp_mutex[epoch & 1])) != 0) {
 		if (rval != EBUSY)
 			err(1, "mutex_trylock returned %d", rval);
-		fprintf(stderr, "response is still locked by aggregator!! epoch:%lu\n", epoch);
+		blocking_count++; /* increment the stat counter */
+		if (debug)
+			fprintf(stderr, "response is still locked by aggregator!! epoch:%lu\n", epoch);
 		if ((rval = pthread_mutex_lock(&resp_mutex[epoch & 1])) != 0)
 			err(1, "mutex_lock returned %d", rval);
 	}
@@ -488,11 +491,21 @@ aggregator(void *thdata)
 			odflow_stats();
 		}
 #endif
-		if (gotsig_hup) {
-			/* reopen the outpufile for log rotation */
-			if (wfp != stdout && freopen(wfile, "a", wfp) == NULL)
-				err(1, "can't freopen %s", wfile);
-			gotsig_hup = 0;
+		if (wfp != stdout) {
+			/*
+			 * when writing to a file, SIGHUP is used to
+			 * reopen the output file.
+			 */
+			if (my_resp->interval > 0 &&
+				my_resp->processing_time < 100)
+				/* sleep for 100ms to receive a signal */
+				usleep(100000);
+			if (gotsig_hup) {
+				/* reopen the outpufile for log rotation */
+				if (freopen(wfile, "a", wfp) == NULL)
+					err(1, "can't freopen %s", wfile);
+				gotsig_hup = 0;
+			}
 		}
 
 		if ((rval = pthread_mutex_unlock(&resp_mutex[my_epoch & 1])) != 0)

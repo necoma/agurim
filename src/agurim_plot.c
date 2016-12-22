@@ -615,8 +615,10 @@ aguri_preamble_print(struct response *resp)
 	    disable_heuristics < 2 ? query.threshold * 4 : query.threshold);
 	fprintf(wfp, "%%input odflows: IPv4:%"PRIu64" IPv6:%"PRIu64"\n",
 	    resp->input_odflows, resp->input_odflows6);
-
-	fprintf(wfp, "\n");
+	fprintf(wfp, "%%aggregated in %d ms", resp->processing_time);
+	if (blocking_count > 0)
+		fprintf(wfp, ", blocking_count:%u", blocking_count);
+	fprintf(wfp, "\n\n");
 }
 
 static void

@@ -81,6 +81,7 @@ int proto_view = 0;
 int verbose = 0;
 int debug = 0;
 int timeoffset = 0;
+unsigned int blocking_count; /* thread blocking counter for aguri3 */
 FILE *wfp;
 
 static int flow_mode = 0;  /* read binary aguri_flow inputs from stdin */
