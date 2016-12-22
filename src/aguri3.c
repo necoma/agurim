@@ -491,23 +491,6 @@ aggregator(void *thdata)
 			odflow_stats();
 		}
 #endif
-		if (wfp != stdout) {
-			/*
-			 * when writing to a file, SIGHUP is used to
-			 * reopen the output file.
-			 */
-			if (my_resp->interval > 0 &&
-				my_resp->processing_time < 100)
-				/* sleep for 100ms to receive a signal */
-				usleep(100000);
-			if (gotsig_hup) {
-				/* reopen the outpufile for log rotation */
-				if (freopen(wfile, "a", wfp) == NULL)
-					err(1, "can't freopen %s", wfile);
-				gotsig_hup = 0;
-			}
-		}
-
 		if ((rval = pthread_mutex_unlock(&resp_mutex[my_epoch & 1])) != 0)
 			err(1, "mutex_unlock returned %d", rval);
 
@@ -515,6 +498,29 @@ aggregator(void *thdata)
 
 		if (exiting)
 			break;
+		/*
+		 * when writing to a file, SIGHUP is used to
+		 * reopen the output file.
+		 */
+		if (wfp != stdout) {
+			/*
+			 * kludge: when reading flows, the collectors'
+			 * time could be out of sync, and the interval
+			 * could end before we receive HUP.
+			 * so, if interval is larger than 20 seconds
+			 * and the processing time is less than 100 ms,
+			 * sleep for 3 seconds before checking HUP arrival.
+			 */
+			if (my_resp->interval > 20 &&
+				my_resp->processing_time < 100)
+				sleep(3);
+			if (gotsig_hup) {
+				/* reopen the outpufile for log rotation */
+				if (freopen(wfile, "a", wfp) == NULL)
+					err(1, "can't freopen %s", wfile);
+				gotsig_hup = 0;
+			}
+		}
 	}
 	pthread_exit(NULL);
 }
