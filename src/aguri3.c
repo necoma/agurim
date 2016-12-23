@@ -502,7 +502,8 @@ aggregator(void *thdata)
 		 * when writing to a file, SIGHUP is used to
 		 * reopen the output file.
 		 */
-		if (wfp != stdout) {
+		if (pid_file != NULL && wfp != stdout) {
+#if 1 /* kludge */
 			/*
 			 * kludge: when reading flows, the collectors'
 			 * time could be out of sync, and the interval
@@ -514,6 +515,7 @@ aggregator(void *thdata)
 			if (my_resp->interval > 20 &&
 				my_resp->processing_time < 100)
 				sleep(3);
+#endif
 			if (gotsig_hup) {
 				/* reopen the outpufile for log rotation */
 				if (freopen(wfile, "a", wfp) == NULL)
