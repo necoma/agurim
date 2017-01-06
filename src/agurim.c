@@ -486,6 +486,7 @@ is_preambles(char *buf)
 	char *cp;
         struct tm tm;
         time_t t = 0;
+	static time_t ts_next;
 
 	if (buf[0] == '\0' || buf[0] == '#')
 		return (1);
@@ -504,16 +505,21 @@ is_preambles(char *buf)
 
 		if (query.start_time > t)
 			return (1);
-		if (response->start_time == 0)
+		if (response->start_time == 0) {
 			response->start_time = t;
+			if (response->interval != 0)
+				ts_next = query.start_time + query.interval;
+		}
 		if (!plot_phase)
 			response->current_time = t;
 		if (query.outfmt == REAGGREGATION && response->interval != 0 &&
-		    t - response->start_time >= response->interval) {
+		    t >= ts_next) {
 			if (hhh_run(response) > 0)
 				make_output(response);
 			odhash_resetall(response);
 			response->start_time = t;
+			if (t >= ts_next)
+				ts_next += response->interval;
 		}
 		if (plot_phase) {
 			time_t slottime = plot_getslottime();
