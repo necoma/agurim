@@ -508,7 +508,8 @@ is_preambles(char *buf)
 		if (response->start_time == 0) {
 			response->start_time = t;
 			if (response->interval != 0)
-				ts_next = query.start_time + query.interval;
+				ts_next = t / response->interval *
+				    response->interval + response->interval;
 		}
 		if (!plot_phase)
 			response->current_time = t;
