@@ -507,9 +507,13 @@ is_preambles(char *buf)
 			return (1);
 		if (response->start_time == 0) {
 			response->start_time = t;
-			if (response->interval != 0)
-				ts_next = t / response->interval *
-				    response->interval + response->interval;
+			if (response->interval != 0) {
+				/* try to align the interval */
+				int interval = response->interval;
+				if (interval > 3600)
+					interval = 3600; /* for timezone */
+				ts_next = t / interval * interval + response->interval;
+			}
 		}
 		if (!plot_phase)
 			response->current_time = t;
