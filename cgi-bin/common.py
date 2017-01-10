@@ -32,11 +32,13 @@ def combine_fnames(start, end, path):
 	return ret
 
 def combine_yearly_files(start, end, path, fmt='%Y', grad=YEAR, files=''):
+        last_fname = ""  # to check a duplicate file in a leap year
 	while start < end + grad:
 		start_str = datetime.datetime.fromtimestamp(start).strftime(fmt)
 		fname = "%s.agr" % start_str
-    		if os.path.exists(os.path.join(path, fname)) == True:
+    		if fname != last_fname and os.path.exists(os.path.join(path, fname)) == True:
 			files += " %s" % fname
+                        last_fname = fname
 		start += grad
 	return files
 
