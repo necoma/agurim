@@ -71,7 +71,7 @@ new function() {
 						console.log("cmd:" + data['cmd']);
 						response = myAgurim.parseResponse(data);
 				                if (isNaN(response.nflows) || response.nflows == 0) {
-					            bootbox.alert("No data to plot! press Home to reset the plot range");
+					            bootbox.alert("No data to plot!  Click Home to reset the plot range");
 					            return;
 						}
 						myAgurim.insertTimeLabel(response.startTime, response.endTime, response.interval);
