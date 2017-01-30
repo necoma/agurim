@@ -66,14 +66,14 @@ new function() {
 				}
 			})
 				.done(function(data) {
-				        if (isNaN(response.nflows) || response.nflows == 0) {
-					        bootbox.alert("No data to plot! press Home to reset the plot range");
-					        return;
-					}
 					if (query.outfmt == 'json') {
 						var response, plotdata;
 						console.log("cmd:" + data['cmd']);
 						response = myAgurim.parseResponse(data);
+				                if (isNaN(response.nflows) || response.nflows == 0) {
+					            bootbox.alert("No data to plot! press Home to reset the plot range");
+					            return;
+						}
 						myAgurim.insertTimeLabel(response.startTime, response.endTime, response.interval);
 						plotdata = myAgurim.generatePlotData(response.criteria, response.interval, response.nflows, response.labels, response.data);
 						myAgurim.visualizeStaticPlot(response.id, response.ylabel, plotdata);
