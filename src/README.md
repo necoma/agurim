@@ -75,7 +75,7 @@ data twice.
     Specify the endtime in Unix time.
 
   + `-F`:  
-    Read binary aguri flow records, instead of text-based aguri2 output,
+    Read binary aguri flow records, instead of text-based aguri3 output,
     from stdin.  This is for testing purposes.
 
   + `-P`:  
@@ -113,7 +113,7 @@ pthread: one thread for input processing and another for aggregation
 and output.
 aguri3 can produce aggregated flow records using the pcap library, or
 reading the aguri_flow records from the standard input.
-To read NetFlow or sFlow, use "aguri2_xflow".
+To read NetFlow or sFlow, use "aguri3_xflow".
 
 aguri3 reopens the output file when it receives a HUP signal, which can
 be used for log-rotation.
@@ -225,11 +225,11 @@ To read a saved pcap file:
 To read netflow data from port 2055, and produce aggregated flow
 records every 60 seconds:
 
-	aguri2_xflow -t netflow -p 2055 | aguri3 -i 60
+	aguri3_xflow -t netflow -p 2055 | aguri3 -i 60
 
 Similary, to read sflow data from port 6343, and produce aggregated
 flow records every 60 seconds: 
 
-	aguri2_xflow -t sflow -p 6343 | aguri3 -i 60
+	aguri3_xflow -t sflow -p 6343 | aguri3 -i 60
 
 
