@@ -6,13 +6,12 @@ This source tree contains the tools to build the agurim web server,
 including the source code of the re-aggregation engine and web
 user interface.
 
-The primary aggregation tools for agurim can be found at
-https://github.com/necoma/aguri2/
-
 # Layout
 
 	/usr/local/bin/agurim
 		the agurim binary.
+	/usr/local/bin/aguri3
+		the aguri3 binary for primary aggregation.
 	cgi-bin/
 		the cgi directory.
 	agurim_home/
