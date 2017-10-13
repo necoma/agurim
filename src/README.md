@@ -1,5 +1,5 @@
 # agurim
-========
+
 agurim: agurim re-aggregation tool
 
 agurim reads files in the Aguri format, perform re-aggregation, and
@@ -102,7 +102,7 @@ To specify the time period, you have to specify two among 'starttime',
 
 	agurim -i 3600 -d 86400 -S 1426172400 file.agr
 
-========
+
 # aguri3
 
 aguri3: a new thread-based primary aggregation tools for agurim
