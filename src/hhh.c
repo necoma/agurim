@@ -277,8 +277,13 @@ lattice_search(struct odflow *parent, int pl0, int pl1, int size, int pos,
 		do_recurse = 0;
 		if (on_edge == ON_LEFTEDGE) {
 			/* need to visit the very bottom */
+#if 1 /* remove unnecessary recursions */
+			if (size != 0 && pl1 + size == params->maxsize)
+				do_recurse = 1;
+#else			
 			if (size != 0)
 				do_recurse = 1;
+#endif			
 		}
 	}
 	/* don't extract for upper area, to be done later at an higher level */
