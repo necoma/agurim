@@ -359,7 +359,7 @@ file_parse(char **files)
 	struct stat st;
 	FILE *fp;
         int i, m;
-	char file[254];
+	char file[NAME_MAX+1];
 
         if (stat(*files, &st) < 0) {
 #if 1
@@ -387,7 +387,7 @@ file_parse(char **files)
 			(void)fclose(fp);
                 }   
         } else  {
-		memcpy(file, *files, sizeof(file));
+		strncpy(file, *files, sizeof(file));
 		if ((fp = fopen(file, "r")) == NULL)
 			err(1, "can't open %s", file);
 		read_file(fp);
