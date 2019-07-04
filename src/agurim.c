@@ -359,7 +359,7 @@ file_parse(char **files)
 	struct stat st;
 	FILE *fp;
         int i, m;
-	char file[254];
+	char file[MAXNAMLEN+1];
 
         if (stat(*files, &st) < 0) {
 #if 1
@@ -380,14 +380,14 @@ file_parse(char **files)
                                 continue;
                         if (!strncmp(flist[i]->d_name, "..", 2)) 
                                 continue;
-                        sprintf(file, "%s/%s", *files, flist[i]->d_name);
+                        snprintf(file, sizeof(file), "%s/%s", *files, flist[i]->d_name);
 			if ((fp = fopen(file, "r")) == NULL)
 				err(1, "can't open %s", file);
 			read_file(fp);
 			(void)fclose(fp);
                 }   
         } else  {
-		memcpy(file, *files, sizeof(file));
+		strlcpy(file, *files, sizeof(file));
 		if ((fp = fopen(file, "r")) == NULL)
 			err(1, "can't open %s", file);
 		read_file(fp);
