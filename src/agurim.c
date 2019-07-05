@@ -49,6 +49,7 @@
 #include <math.h>
 #include <time.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include "agurim.h"
 #include "aguri_flow.h"
@@ -104,7 +105,7 @@ usage()
 
 int main(int argc, char **argv)
 {
-	int i, n, nflows;
+	int i, n, nflows = 0;
 	char **files;
 
 	init(argc, argv);
@@ -359,7 +360,7 @@ file_parse(char **files)
 	struct stat st;
 	FILE *fp;
         int i, m;
-	char file[MAXNAMLEN+1];
+	char file[PATH_MAX+1];
 
         if (stat(*files, &st) < 0) {
 #if 1
@@ -387,7 +388,11 @@ file_parse(char **files)
 			(void)fclose(fp);
                 }   
         } else  {
+#ifdef __linux__
+		strncpy(file, *files, sizeof(file));
+#else		
 		strlcpy(file, *files, sizeof(file));
+#endif		
 		if ((fp = fopen(file, "r")) == NULL)
 			err(1, "can't open %s", file);
 		read_file(fp);

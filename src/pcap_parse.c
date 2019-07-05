@@ -130,7 +130,8 @@ pcap_read(const char *dumpfile, const char *interface,
 
 	if (device != NULL) {
 		/* let user own process after interface has been opened */
-		setuid(getuid());
+		if (setuid(getuid()) != 0)
+			warn("setuid failed!");
 #if defined(BSD) && defined(BPF_MAXBUFSIZE)
 		{
 			/* check the buffer size */
